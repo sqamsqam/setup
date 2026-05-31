@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Menu-driven TUI wizard replaces linear 7-screen flow: users choose an action first (Full Setup, System Bootstrap, Add User, Install CLI Tools, Install Dev Tools), then follow a guided wizard tailored to that action
+- Re-runnable individual actions — after completing one task the user returns to the main menu, enabling repeated use without restarting the tool
+- Full Setup chains four guided wizards sequentially (Bootstrap → Add User → CLI Tools → Dev Tools), each with its own confirm/run/done cycle and chain progress tracking
+- Spinner animation during provisioning steps using `tea.Tick` + `tea.Batch` for live feedback
+- Native terminal progress bar via `tea.ProgressBar` (OSC 9;4) for chain execution in supported terminals
+- In-terminal progress bar drawn with lipgloss box-drawing characters for chain execution
+- Flow-based navigation with `esc` stepping back through wizard screens and returning to the main menu
+
+### Changed
+- TUI dry-run now uses `DryRunner` (same execution path as CLI mode) instead of skipping provisioning calls — `[DRY-RUN]` messages are silenced in TUI mode while the TUI displays its own `(dry run)` status
+- Step-selection toggle screen (checkbox list) replaced by a cursor-driven main menu with descriptions
+- Welcome screen replaced by main menu with persistent root-privilege warning
+- Running view shows chain progress (completed/pending steps) for Full Setup and a simple spinner for standalone actions
+- Done view shows chain continuation prompts (`Next: Add User — enter continue · esc back to menu · q quit`) for Full Setup
+
+### Removed
+- `screenWelcome` and `screenStepSelect` from the TUI screen enum
+- `stepFlags`, `cursor`, `selectedSteps()`, `needsUserInput()`, `needsKeyInput()`, `needsTimezoneInput()`, `hasSelections()` from the TUI model
+- `tuiRunner` wrapper — replaced by `newWizardRunner` which uses `DryRunner` for dry-run parity
+
 ## [0.2.0] - 2026-05-31
 
 ### Changed

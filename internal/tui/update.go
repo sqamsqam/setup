@@ -1,10 +1,18 @@
 package tui
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sqamsqam/setup/internal/user"
 )
+
+func tickSpinner() tea.Cmd {
+	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -15,22 +23,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepStatusMsg:
 		return m.handleStepMsg(msg)
 
+	case spinnerTickMsg:
+		m.spinnerFrame++
+		if m.screen == screenRunning {
+			return m, tickSpinner()
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.quitting {
 			return m, tea.Quit
 		}
 
 		switch m.screen {
-		case screenWelcome:
-			return m.updateWelcome(msg)
-		case screenStepSelect:
-			return m.updateStepSelect(msg)
+		case screenMainMenu:
+			return m.updateMainMenu(msg)
+		case screenInputTimezone:
+			return m.updateInputTimezone(msg)
 		case screenInputUser:
 			return m.updateInputUser(msg)
 		case screenInputKey:
 			return m.updateInputKey(msg)
-		case screenInputTimezone:
-			return m.updateInputTimezone(msg)
 		case screenConfirm:
 			return m.updateConfirm(msg)
 		case screenRunning:
@@ -40,7 +53,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case screenDone:
-			return m, tea.Quit
+			return m.updateDone(msg)
 		}
 	}
 
@@ -48,90 +61,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
-	if msg.quitting {
-		for i := range m.steps {
-			if m.stepFlags[i] && m.steps[i].status == stepPending {
-				m.steps[i].status = stepOK
-			}
-		}
-		m.screen = screenDone
-		return m, nil
-	}
-
 	m.steps[msg.index].status = msg.status
 	m.steps[msg.index].output = msg.output
-
-	if msg.status == stepOK {
-		nextIdx := -1
-		for i := msg.index + 1; i < len(m.steps); i++ {
-			if m.stepFlags[i] && m.steps[i].status == stepPending {
-				nextIdx = i
-				break
-			}
-		}
-		if nextIdx >= 0 {
-			m.steps[nextIdx].status = stepRunning
-			return m, runProvisioning(m, nextIdx)
-		}
-		m.screen = screenDone
-		return m, nil
-	}
-
-	if msg.status == stepFail {
-		m.screen = screenDone
-		return m, nil
-	}
-
+	m.screen = screenDone
 	return m, nil
 }
 
-func (m model) updateWelcome(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
-	default:
-		m.screen = screenStepSelect
-	}
-	return m, nil
-}
-
-func (m model) updateStepSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) updateMainMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.menuCursor > 0 {
+			m.menuCursor--
 		}
 	case "down", "j":
-		if m.cursor < len(m.steps)-1 {
-			m.cursor++
-		}
-	case " ":
-		if m.cursor < len(m.stepFlags) {
-			m.stepFlags[m.cursor] = !m.stepFlags[m.cursor]
+		if m.menuCursor < len(m.menuItems)-1 {
+			m.menuCursor++
 		}
 	case "enter":
-		if m.hasSelections() {
-			if m.needsUserInput() {
-				m.screen = screenInputUser
-			} else if m.needsTimezoneInput() {
-				m.screen = screenInputTimezone
+		if m.menuCursor >= 0 && m.menuCursor < len(m.menuItems) {
+			item := m.menuItems[m.menuCursor]
+			m.action = item.action
+			if m.action == actionFullSetup {
+				m.chainIdx = 0
 			} else {
-				m.screen = screenConfirm
+				m.chainIdx = -1
 			}
+			m.buildSteps()
+			m.flowPos = 0
+			m.screen = m.currentFlow()[0]
 		}
-	case "c":
-		if m.hasSelections() {
-			if m.needsUserInput() {
-				m.screen = screenInputUser
-			} else if m.needsTimezoneInput() {
-				m.screen = screenInputTimezone
-			} else {
-				m.screen = screenConfirm
-			}
+	}
+	return m, nil
+}
+
+func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "enter":
+		m.goNext()
+	case "esc":
+		m.goBack()
+	case "backspace":
+		if len(m.timezone) > 0 {
+			m.timezone = m.timezone[:len(m.timezone)-1]
+		}
+	default:
+		s := msg.String()
+		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
+			m.timezone += s
 		}
 	}
 	return m, nil
@@ -149,18 +131,11 @@ func (m model) updateInputUser(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.usernameErr = err.Error()
 				return m, nil
 			}
-			if m.needsKeyInput() {
-				m.screen = screenInputKey
-			} else if m.needsTimezoneInput() {
-				m.screen = screenInputTimezone
-			} else {
-				m.screen = screenConfirm
-			}
+			m.goNext()
 		}
 	case "esc":
 		m.usernameErr = ""
-		m.screen = screenStepSelect
-		return m, nil
+		m.goBack()
 	case "backspace":
 		if len(m.username) > 0 {
 			m.username = m.username[:len(m.username)-1]
@@ -188,16 +163,11 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.sshKeyErr = err.Error()
 				return m, nil
 			}
-			if m.needsTimezoneInput() {
-				m.screen = screenInputTimezone
-			} else {
-				m.screen = screenConfirm
-			}
+			m.goNext()
 		}
 	case "esc":
 		m.sshKeyErr = ""
-		m.screen = screenStepSelect
-		return m, nil
+		m.goBack()
 	case "backspace":
 		if len(m.sshKey) > 0 {
 			m.sshKey = m.sshKey[:len(m.sshKey)-1]
@@ -213,29 +183,6 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
-	case "enter":
-		m.screen = screenConfirm
-	case "esc":
-		m.screen = screenStepSelect
-		return m, nil
-	case "backspace":
-		if len(m.timezone) > 0 {
-			m.timezone = m.timezone[:len(m.timezone)-1]
-		}
-	default:
-		s := msg.String()
-		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
-			m.timezone += s
-		}
-	}
-	return m, nil
-}
-
 func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -243,25 +190,38 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.screen = screenRunning
-		m.resetSteps()
-		for i, f := range m.stepFlags {
-			if f {
-				m.steps[i].status = stepRunning
-				break
-			}
-		}
-		return m, runProvisioning(m, 0)
+		m.steps[m.runningStepIndex()].status = stepRunning
+		m.steps[m.runningStepIndex()].output = ""
+		return m, tea.Batch(runProvisioningStep(m), tickSpinner())
 	case "esc":
-		m.screen = screenStepSelect
+		m.goBack()
 	}
 	return m, nil
 }
 
-func (m model) hasSelections() bool {
-	for _, f := range m.stepFlags {
-		if f {
-			return true
-		}
+func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "q" || key == "ctrl+c" {
+		m.quitting = true
+		return m, tea.Quit
 	}
-	return false
+
+	if key == "enter" {
+		if m.isChain() && m.chainIdx < len(fullSetupChain)-1 {
+			m.chainIdx++
+			m.spinnerFrame = 0
+			m.flowPos = 0
+			m.screen = m.currentFlow()[0]
+			return m, nil
+		}
+		m.resetToMenu()
+		return m, nil
+	}
+
+	if key == "esc" {
+		m.resetToMenu()
+		return m, nil
+	}
+
+	return m, nil
 }
