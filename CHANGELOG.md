@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0] - 2026-05-31
+
+### Changed
+- Replaced hand-rolled CLI arg parsing with `urfave/cli/v3` for structured subcommand routing, automatic help generation, and flag suggestions
+- Added short-flag aliases for all CLI subcommands (`-u`, `-k`, `-t`, `-b`, `-a`, `-i`, `-d`, `-f`, `-v`)
+- Wrapped root warning logic into `provisioningAction` helper
+- Replaced global `testRunner` with `RunnerFactory` parameter for thread safety
+
+### Fixed
+- Resolved all golangci-lint `errcheck` and `staticcheck` issues
+
+### CI
+- Bumped `golangci-lint-action` from v6 to v9; reverted version pin to track latest
+
 ## [0.1.0] - 2026-05-31
 
 Initial release of the Ubuntu LXC provisioning tool.
@@ -32,4 +46,5 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.2.0]: https://github.com/sqamsqam/setup/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sqamsqam/setup/releases/tag/v0.1.0
