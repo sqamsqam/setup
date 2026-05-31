@@ -77,16 +77,23 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 `) + "\n"
 
-	oldContent, _ := os.ReadFile(autoUpgradesConfig)
+	oldContent, _ := runner.ReadFile(autoUpgradesConfig)
 	if bytes.Equal(oldContent, []byte(content)) {
 		return nil
 	}
 
-	tmpPath := "/tmp/20auto-upgrades"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	tmpFile, err := os.CreateTemp("", "setup-auto-upgrades-*")
+	if err != nil {
 		return err
 	}
-	return runner.Run("mv", tmpPath, autoUpgradesConfig)
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer runner.Remove(tmpPath)
+
+	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+		return err
+	}
+	return runner.Rename(tmpPath, autoUpgradesConfig)
 }
 
 func setTimezone(runner setupexec.CmdRunner, tz string) error {
@@ -103,30 +110,42 @@ ChallengeResponseAuthentication no
 MaxAuthTries 3
 LoginGraceTime 30
 X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+MaxSessions 10
+MaxStartups 10:30:100
 `
-	tmpPath := "/tmp/99-hardening.conf"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	tmpFile, err := os.CreateTemp("", "setup-99-hardening-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer runner.Remove(tmpPath)
+
+	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return err
 	}
 
-	if err := runner.Run("mkdir", "-p", "/etc/ssh/sshd_config.d"); err != nil {
+	if err := runner.MkdirAll("/etc/ssh/sshd_config.d", 0755); err != nil {
 		return err
 	}
 
-	oldContent, _ := os.ReadFile(sshdHardeningConfig)
+	oldContent, _ := runner.ReadFile(sshdHardeningConfig)
 	newContent := []byte(content)
 
+	// If content unchanged and current config is valid, skip
 	if string(oldContent) == string(newContent) && sshdConfigValid(runner) {
-		os.Remove(tmpPath)
 		return nil
 	}
 
-	if err := runner.Run("mv", tmpPath, sshdHardeningConfig); err != nil {
-		return err
+	// Validate the new config against the temp file before installing
+	if err := runner.Run("sshd", "-t", "-f", tmpPath); err != nil {
+		return fmt.Errorf("sshd configuration test failed — new hardening config rejected, SSH not restarted")
 	}
 
-	if !sshdConfigValid(runner) {
-		return fmt.Errorf("sshd configuration test failed — SSH not restarted to avoid lockout")
+	if err := runner.Rename(tmpPath, sshdHardeningConfig); err != nil {
+		return err
 	}
 
 	return runner.Run("systemctl", "restart", "ssh")

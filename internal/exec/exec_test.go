@@ -102,18 +102,166 @@ func TestDryRunnerOutput(t *testing.T) {
 	}
 }
 
-func TestDryRunnerCombinedOutput(t *testing.T) {
+func TestDryRunnerWriteFile(t *testing.T) {
 	var buf bytes.Buffer
 	runner := &DryRunner{Stdout: &buf}
 
-	out, err := runner.CombinedOutput("ls", "-la")
+	err := runner.WriteFile("/tmp/test", []byte("hello"), 0644)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out != "" {
-		t.Errorf("expected empty output, got: %q", out)
+	got := buf.String()
+	if !strings.Contains(got, "WriteFile") {
+		t.Errorf("expected WriteFile in output, got: %q", got)
 	}
-	if !strings.Contains(buf.String(), "CombinedOutput: ls -la") {
-		t.Errorf("expected CombinedOutput prefix in log, got: %q", buf.String())
+	if !strings.Contains(got, "/tmp/test") {
+		t.Errorf("expected path in output, got: %q", got)
 	}
+}
+
+func TestDryRunnerReadFile(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	data, err := runner.ReadFile("/etc/some-file")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data != nil {
+		t.Errorf("expected nil data in dry-run, got: %v", data)
+	}
+	if !strings.Contains(buf.String(), "ReadFile") {
+		t.Errorf("expected ReadFile in output")
+	}
+}
+
+func TestDryRunnerRename(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	err := runner.Rename("/tmp/src", "/etc/dst")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Rename") {
+		t.Errorf("expected Rename in output")
+	}
+	if !strings.Contains(got, "/tmp/src") || !strings.Contains(got, "/etc/dst") {
+		t.Errorf("expected both paths in output")
+	}
+}
+
+func TestDryRunnerChmod(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	err := runner.Chmod("/usr/local/bin/yq", 0755)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Chmod") {
+		t.Errorf("expected Chmod in output")
+	}
+}
+
+func TestDryRunnerMkdirAll(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	err := runner.MkdirAll("/etc/ssh/sshd_config.d", 0755)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "MkdirAll") {
+		t.Errorf("expected MkdirAll in output")
+	}
+}
+
+func TestDryRunnerRemove(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	err := runner.Remove("/tmp/some-temp-file")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Remove") {
+		t.Errorf("expected Remove in output")
+	}
+}
+
+func TestDryRunnerRemoveAll(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	err := runner.RemoveAll("/usr/local/go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "RemoveAll") {
+		t.Errorf("expected RemoveAll in output")
+	}
+}
+
+func TestDryRunnerStat(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	_, err := runner.Stat("/some/file")
+	if err == nil {
+		t.Error("expected error from dry-run Stat")
+	}
+	if !strings.Contains(buf.String(), "Stat") {
+		t.Errorf("expected Stat in output")
+	}
+}
+
+func TestDryRunnerLookupUser(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &DryRunner{Stdout: &buf}
+
+	uid, gid, err := runner.LookupUser("root")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if uid != 0 || gid != 0 {
+		t.Errorf("expected root uid=0,gid=0, got uid=%d,gid=%d", uid, gid)
+	}
+
+	buf.Reset()
+	uid, gid, err = runner.LookupUser("dev")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if uid != 1000 || gid != 1000 {
+		t.Errorf("expected dev uid=1000,gid=1000, got uid=%d,gid=%d", uid, gid)
+	}
+
+	if !strings.Contains(buf.String(), "LookupUser") {
+		t.Errorf("expected LookupUser in output")
+	}
+}
+
+func TestRealRunnerLookupUser(t *testing.T) {
+	t.Run("root", func(t *testing.T) {
+		runner := NewRealRunner()
+		uid, gid, err := runner.LookupUser("root")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if uid != 0 || gid != 0 {
+			t.Errorf("expected root uid=0,gid=0, got uid=%d,gid=%d", uid, gid)
+		}
+	})
+
+	t.Run("nonexistent", func(t *testing.T) {
+		runner := NewRealRunner()
+		_, _, err := runner.LookupUser("this-user-does-not-exist-12345")
+		if err == nil {
+			t.Error("expected error for nonexistent user")
+		}
+	})
 }

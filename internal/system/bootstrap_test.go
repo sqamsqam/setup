@@ -24,6 +24,10 @@ ChallengeResponseAuthentication no
 MaxAuthTries 3
 LoginGraceTime 30
 X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+MaxSessions 10
+MaxStartups 10:30:100
 `
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -44,6 +48,10 @@ X11Forwarding no
 		"MaxAuthTries 3",
 		"LoginGraceTime 30",
 		"X11Forwarding no",
+		"ClientAliveInterval 300",
+		"ClientAliveCountMax 2",
+		"MaxSessions 10",
+		"MaxStartups 10:30:100",
 	} {
 		if !strings.Contains(string(got), line) {
 			t.Errorf("expected %q in output", line)

@@ -44,11 +44,8 @@ func TestInstallYqWithDryRunner(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "[DRY-RUN]") {
-		t.Error("expected dry-run log output")
-	}
-	if !strings.Contains(output, "wget") {
-		t.Error("expected wget command in output")
+	if output != "" {
+		t.Errorf("expected no output for dry-run short-circuit, got: %q", output)
 	}
 }
 

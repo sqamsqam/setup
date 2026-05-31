@@ -39,7 +39,8 @@ func runProvisioning(m model, startIdx int) tea.Cmd {
 				continue
 			}
 			if m.dryRun {
-				continue
+				// In dry-run mode, show each step as "would run"
+				return stepStatusMsg{index: step.idx, status: stepOK, output: "(dry run)"}
 			}
 			if err := step.fn(); err != nil {
 				return stepStatusMsg{index: step.idx, status: stepFail, output: err.Error()}

@@ -86,14 +86,14 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  bootstrap               Locale, system update, base packages, SSH hardening,")
 	fmt.Println("                          unattended upgrades, Docker")
-	fmt.Println("                          Options: --timezone <zone> (default: Australia/Sydney)")
+	fmt.Println("                          Options: --timezone <zone> (default: UTC)")
 	fmt.Println("  add-user                Create sudo user with SSH key auth")
-	fmt.Println("                          Options: --user <name> --key \"<ssh-public-key>\"")
+	fmt.Println("                          Options: --user <name> --key \"<pubkey>\" or --key-file <path>")
 	fmt.Println("  install-tools           Install ripgrep, fd, bat, yq, glow, gh")
 	fmt.Println("  devtools                Install Go (system-wide) and Node.js (per-user)")
 	fmt.Println("                          Options: --user <name> [--all] [--go] [--node]")
 	fmt.Println("  full                    Run all steps in sequence")
-	fmt.Println("                          Options: --user <name> --key \"<pubkey>\"")
+	fmt.Println("                          Options: --user <name> --key \"<pubkey>\" or --key-file <path>")
 	fmt.Println("                                   [--timezone <zone>]")
 	fmt.Println("  version                 Print version info")
 	fmt.Println()
@@ -111,7 +111,7 @@ func printCommandHelp(cmd string) {
 		fmt.Println("security upgrades, timezone configuration, and Docker installation.")
 		fmt.Println()
 		fmt.Println("Options:")
-		fmt.Println("  --timezone <zone>  Timezone (default: Australia/Sydney)")
+		fmt.Println("  --timezone <zone>  Timezone (default: UTC)")
 	case "add-user":
 		fmt.Println("Usage: setup add-user --user <name> --key \"<ssh-public-key>\"")
 		fmt.Println()
@@ -121,7 +121,8 @@ func printCommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  --user <name>      Username for the new account")
-		fmt.Println("  --key \"<key>\"     SSH public key content")
+		fmt.Println("  --key \"<key>\"     SSH public key content (visible in process list)")
+		fmt.Println("  --key-file <path>  Path to a file containing the SSH public key (safer)")
 	case "install-tools":
 		fmt.Println("Usage: setup install-tools")
 		fmt.Println()
@@ -146,8 +147,9 @@ func printCommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  --user <name>      Username for the new account")
-		fmt.Println("  --key \"<pubkey>\"  SSH public key content")
-		fmt.Println("  --timezone <zone>  Timezone (default: Australia/Sydney)")
+		fmt.Println("  --key \"<pubkey>\"  SSH public key content (visible in process list)")
+		fmt.Println("  --key-file <path>  Path to a file containing the SSH public key (safer)")
+		fmt.Println("  --timezone <zone>  Timezone (default: UTC)")
 	default:
 		printUsage()
 	}
@@ -190,6 +192,22 @@ func runAddUser(runner setupexec.CmdRunner, args []string) {
 			i++
 		case strings.HasPrefix(args[i], "--key="):
 			pubkey = strings.TrimPrefix(args[i], "--key=")
+		case args[i] == "--key-file" && i+1 < len(args):
+			keyBytes, err := os.ReadFile(args[i+1])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ERROR: reading key file %s: %v\n", args[i+1], err)
+				os.Exit(1)
+			}
+			pubkey = strings.TrimSpace(string(keyBytes))
+			i++
+		case strings.HasPrefix(args[i], "--key-file="):
+			path := strings.TrimPrefix(args[i], "--key-file=")
+			keyBytes, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ERROR: reading key file %s: %v\n", path, err)
+				os.Exit(1)
+			}
+			pubkey = strings.TrimSpace(string(keyBytes))
 		default:
 			if strings.HasPrefix(args[i], "--") {
 				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", args[i])
@@ -286,6 +304,22 @@ func runFull(runner setupexec.CmdRunner, args []string) {
 			i++
 		case strings.HasPrefix(args[i], "--key="):
 			pubkey = strings.TrimPrefix(args[i], "--key=")
+		case args[i] == "--key-file" && i+1 < len(args):
+			keyBytes, err := os.ReadFile(args[i+1])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ERROR: reading key file %s: %v\n", args[i+1], err)
+				os.Exit(1)
+			}
+			pubkey = strings.TrimSpace(string(keyBytes))
+			i++
+		case strings.HasPrefix(args[i], "--key-file="):
+			path := strings.TrimPrefix(args[i], "--key-file=")
+			keyBytes, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ERROR: reading key file %s: %v\n", path, err)
+				os.Exit(1)
+			}
+			pubkey = strings.TrimSpace(string(keyBytes))
 		case strings.HasPrefix(args[i], "--timezone="):
 			tz = strings.TrimPrefix(args[i], "--timezone=")
 		case args[i] == "--timezone" && i+1 < len(args):

@@ -9,6 +9,14 @@ import (
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 )
 
+// Pinned Go version and SHA256 for deterministic, secure installation.
+// When set to non-empty values, these take precedence over the go.dev API.
+// Update these constants when a new Go version is desired.
+var (
+	pinnedGoVersion = ""
+	pinnedGoSHA256  = ""
+)
+
 func InstallGo(runner setupexec.CmdRunner) error {
 	if setupexec.IsDryRun(runner) {
 		setupexec.PrintStep("Would download and install latest Go")
@@ -27,14 +35,21 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		}
 	}
 
-	goJSON, err := runner.Output("curl", "-fsSL", "https://go.dev/dl/?mode=json")
-	if err != nil {
-		return fmt.Errorf("fetch Go releases: %w", err)
-	}
+	var version, sha256 string
+	if pinnedGoVersion != "" && pinnedGoSHA256 != "" {
+		version = pinnedGoVersion
+		sha256 = pinnedGoSHA256
+		setupexec.PrintStep(fmt.Sprintf("Using pinned Go version %s", version))
+	} else {
+		goJSON, err := runner.Output("curl", "-fsSL", "https://go.dev/dl/?mode=json")
+		if err != nil {
+			return fmt.Errorf("fetch Go releases: %w", err)
+		}
 
-	version, sha256, err := parseGoRelease(goJSON)
-	if err != nil {
-		return err
+		version, sha256, err = parseGoRelease(goJSON)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Check if already installed and up to date
@@ -52,21 +67,26 @@ func InstallGo(runner setupexec.CmdRunner) error {
 
 	tarball := version + ".linux-amd64.tar.gz"
 	downloadURL := "https://go.dev/dl/" + tarball
-	tmpTarball := "/tmp/" + tarball
+	tmpFile, err := os.CreateTemp("", "setup-go-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpTarball := tmpFile.Name()
+	tmpFile.Close()
+	defer runner.Remove(tmpTarball)
 
 	setupexec.PrintStep(fmt.Sprintf("Downloading Go %s", version))
 
 	if err := runner.Run("curl", "-fsSL", downloadURL, "-o", tmpTarball); err != nil {
 		return fmt.Errorf("download Go: %w", err)
 	}
-	defer os.Remove(tmpTarball)
 
 	setupexec.PrintStep("Verifying checksum")
 	if err := runner.Shell(fmt.Sprintf("echo '%s  %s' | sha256sum -c --status", sha256, tmpTarball)); err != nil {
 		return fmt.Errorf("Go checksum verification failed")
 	}
 
-	if err := runner.Run("rm", "-rf", "/usr/local/go"); err != nil {
+	if err := runner.RemoveAll("/usr/local/go"); err != nil {
 		return err
 	}
 	if err := runner.Run("tar", "-C", "/usr/local", "-xzf", tmpTarball); err != nil {
@@ -75,11 +95,18 @@ func InstallGo(runner setupexec.CmdRunner) error {
 
 	profileContent := "# Managed by setup — do not edit\n"
 	profileContent += "export PATH=\"/usr/local/go/bin:$PATH\"\n"
-	tmpProfile := "/tmp/go-profile.sh"
-	if err := os.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
+	tmpFile2, err := os.CreateTemp("", "setup-go-profile-*.sh")
+	if err != nil {
+		return fmt.Errorf("create temp profile: %w", err)
+	}
+	tmpProfile := tmpFile2.Name()
+	tmpFile2.Close()
+	defer runner.Remove(tmpProfile)
+
+	if err := runner.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
 		return fmt.Errorf("write temp go profile: %w", err)
 	}
-	if err := runner.Run("mv", tmpProfile, "/etc/profile.d/go.sh"); err != nil {
+	if err := runner.Rename(tmpProfile, "/etc/profile.d/go.sh"); err != nil {
 		return err
 	}
 

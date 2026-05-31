@@ -11,8 +11,8 @@ func TestInitialModel(t *testing.T) {
 	if m.dryRun {
 		t.Error("expected dryRun to be false")
 	}
-	if m.timezone != "Australia/Sydney" {
-		t.Errorf("expected default timezone Australia/Sydney, got: %s", m.timezone)
+	if m.timezone != "UTC" {
+		t.Errorf("expected default timezone UTC, got: %s", m.timezone)
 	}
 	if m.screen != screenWelcome {
 		t.Errorf("expected screenWelcome, got: %d", m.screen)
@@ -207,9 +207,9 @@ func TestStatusIcon(t *testing.T) {
 		want   string
 	}{
 		{stepPending, "  "},
-		{stepRunning, "⏳"},
-		{stepOK, "✓ "},
-		{stepFail, "✗ "},
+		{stepRunning, "[*]"},
+		{stepOK, "[✓]"},
+		{stepFail, "[✗]"},
 	}
 
 	for _, tt := range tests {
@@ -220,22 +220,4 @@ func TestStatusIcon(t *testing.T) {
 	}
 }
 
-func TestCenterText(t *testing.T) {
-	tests := []struct {
-		width int
-		text  string
-		want  string
-	}{
-		{10, "hi", "    hi"},
-		{5, "hi", " hi"},
-		{2, "hi", "hi"},
-		{1, "hi", "hi"},
-	}
 
-	for _, tt := range tests {
-		got := centerText(tt.width, tt.text)
-		if got != tt.want {
-			t.Errorf("centerText(%d, %q) = %q, want %q", tt.width, tt.text, got, tt.want)
-		}
-	}
-}

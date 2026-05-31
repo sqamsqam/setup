@@ -1,6 +1,10 @@
 package tui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/sqamsqam/setup/internal/user"
+)
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -30,6 +34,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenConfirm:
 			return m.updateConfirm(msg)
 		case screenRunning:
+			if msg.String() == "q" || msg.String() == "ctrl+c" {
+				m.quitting = true
+				return m, tea.Quit
+			}
 			return m, nil
 		case screenDone:
 			return m, tea.Quit
@@ -135,7 +143,12 @@ func (m model) updateInputUser(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "enter":
+		m.usernameErr = ""
 		if len(m.username) > 0 {
+			if err := user.ValidateUsername(m.username); err != nil {
+				m.usernameErr = err.Error()
+				return m, nil
+			}
 			if m.needsKeyInput() {
 				m.screen = screenInputKey
 			} else if m.needsTimezoneInput() {
@@ -145,17 +158,20 @@ func (m model) updateInputUser(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "esc":
+		m.usernameErr = ""
 		m.screen = screenStepSelect
 		return m, nil
 	case "backspace":
 		if len(m.username) > 0 {
 			m.username = m.username[:len(m.username)-1]
 		}
+		m.usernameErr = ""
 	default:
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
 			m.username += s
 		}
+		m.usernameErr = ""
 	}
 	return m, nil
 }
@@ -166,7 +182,12 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "enter":
+		m.sshKeyErr = ""
 		if len(m.sshKey) > 0 {
+			if err := user.ValidateSSHKey(m.sshKey); err != nil {
+				m.sshKeyErr = err.Error()
+				return m, nil
+			}
 			if m.needsTimezoneInput() {
 				m.screen = screenInputTimezone
 			} else {
@@ -174,17 +195,20 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "esc":
+		m.sshKeyErr = ""
 		m.screen = screenStepSelect
 		return m, nil
 	case "backspace":
 		if len(m.sshKey) > 0 {
 			m.sshKey = m.sshKey[:len(m.sshKey)-1]
 		}
+		m.sshKeyErr = ""
 	default:
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
 			m.sshKey += s
 		}
+		m.sshKeyErr = ""
 	}
 	return m, nil
 }

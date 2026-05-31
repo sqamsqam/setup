@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -54,6 +52,8 @@ type model struct {
 	timezone string
 	dryRun   bool
 	quitting bool
+	usernameErr string
+	sshKeyErr   string
 }
 
 func InitialModel(dryRun bool) model {
@@ -66,7 +66,7 @@ func InitialModel(dryRun bool) model {
 			{name: "Install development tools (Go, Node.js toolchain)"},
 		},
 		stepFlags: []bool{true, false, false, false},
-		timezone:  "Australia/Sydney",
+		timezone:  "UTC",
 		dryRun:    dryRun,
 	}
 }
@@ -131,16 +131,13 @@ func statusIcon(s stepStatus) string {
 	case stepPending:
 		return "  "
 	case stepRunning:
-		return "⏳"
+		return "[*]"
 	case stepOK:
-		return "✓ "
+		return "[✓]"
 	case stepFail:
-		return "✗ "
+		return "[✗]"
 	}
 	return "  "
 }
 
-func centerText(width int, text string) string {
-	padding := max((width-len(text))/2, 0)
-	return strings.Repeat(" ", padding) + text
-}
+
