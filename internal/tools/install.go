@@ -19,6 +19,7 @@ func InstallAll(runner setupexec.CmdRunner) error {
 		{"Installing bat", func() error { return installGitHubDeb(runner, "sharkdp/bat", `bat_.*_amd64\.deb$`) }},
 		{"Installing yq", func() error { return installYq(runner) }},
 		{"Installing glow", func() error { return installGlow(runner) }},
+		{"Installing gh", func() error { return installGh(runner) }},
 	}
 
 	if err := ensureDeps(runner); err != nil {
@@ -131,4 +132,44 @@ func installGlow(runner setupexec.CmdRunner) error {
 		return err
 	}
 	return runner.Run("apt", "install", "-y", "glow")
+}
+
+func installGh(runner setupexec.CmdRunner) error {
+	keyringPath := "/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+	listPath := "/etc/apt/sources.list.d/github-cli.list"
+
+	if err := runner.Run("mkdir", "-p", "/etc/apt/keyrings"); err != nil {
+		return err
+	}
+
+	if err := runner.Run("wget", "-nv", "-O", keyringPath, "https://cli.github.com/packages/githubcli-archive-keyring.gpg"); err != nil {
+		return fmt.Errorf("download gh gpg key: %w", err)
+	}
+
+	if err := runner.Run("chmod", "go+r", keyringPath); err != nil {
+		return err
+	}
+
+	arch, err := runner.Output("dpkg", "--print-architecture")
+	if err != nil {
+		return fmt.Errorf("get architecture: %w", err)
+	}
+
+	if err := runner.Run("mkdir", "-p", "/etc/apt/sources.list.d"); err != nil {
+		return err
+	}
+
+	listContent := fmt.Sprintf("deb [arch=%s signed-by=%s] https://cli.github.com/packages stable main\n", arch, keyringPath)
+	tmpList := "/tmp/github-cli.list"
+	if err := os.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
+		return fmt.Errorf("write temp github-cli.list: %w", err)
+	}
+	if err := runner.Run("mv", tmpList, listPath); err != nil {
+		return err
+	}
+
+	if err := runner.Run("apt", "update"); err != nil {
+		return err
+	}
+	return runner.Run("apt", "install", "-y", "gh")
 }

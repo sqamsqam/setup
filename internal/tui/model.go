@@ -55,7 +55,7 @@ func InitialModel(dryRun bool) model {
 		steps: []step{
 			{name: "Root bootstrap (locale, base packages, SSH, Docker)"},
 			{name: "Add user with sudo access and SSH key"},
-			{name: "Install CLI tools (ripgrep, fd, bat, yq, glow)"},
+			{name: "Install CLI tools (ripgrep, fd, bat, yq, glow, gh)"},
 			{name: "Install development tools (Go, Node.js toolchain)"},
 		},
 		stepFlags: []bool{true, false, false, false},

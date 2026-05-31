@@ -8,7 +8,7 @@ interactive terminal UI and a traditional CLI interface.
 - Bootstraps a fresh Ubuntu 26.04 LXC container (locale, base packages, SSH
   hardening, unattended upgrades, Docker)
 - Creates users with sudo access, SSH key authentication, and linger support
-- Installs modern CLI tools: ripgrep, fd, bat, yq, glow
+- Installs modern CLI tools: ripgrep, fd, bat, yq, glow, gh
 - Installs Go (system-wide, latest stable)
 - Installs Node.js toolchain per user (fnm, corepack, TypeScript, tsx)
 - Supports dry-run mode for safe previews
@@ -58,7 +58,7 @@ sudo setup bootstrap [--timezone Australia/Sydney]
 # Create a sudo user with SSH key authentication
 sudo setup add-user --user <username> --key "<ssh-public-key>"
 
-# Install CLI tools (ripgrep, fd, bat, yq, glow)
+# Install CLI tools (ripgrep, fd, bat, yq, glow, gh)
 sudo setup install-tools
 
 # Install development tools (Go system-wide, Node.js per-user)
@@ -86,7 +86,7 @@ sudo setup --dry-run full --user dev --key "ssh-ed25519 AAAA..."
 |---|---|
 | `bootstrap` | Locale, system update, base packages, SSH hardening, unattended upgrades, Docker |
 | `add-user` | Create sudo user, install SSH key, enable linger, update AllowUsers |
-| `install-tools` | ripgrep, fd, bat (GitHub releases), yq (binary), glow (charm.sh apt repo) |
+| `install-tools` | ripgrep, fd, bat (GitHub releases), yq (binary), glow (charm.sh apt repo), gh (GitHub CLI apt repo) |
 | `devtools` | Go (system-wide from go.dev), Node.js (per-user via fnm) |
 | `full` | Runs bootstrap → add-user → install-tools → devtools |
 | `version` | Prints version and build info |
@@ -115,7 +115,7 @@ This will:
 4. Install Docker
 5. Create the specified user with passwordless sudo
 6. Install the user's SSH public key
-7. Install CLI tools (ripgrep, fd, bat, yq, glow)
+7. Install CLI tools (ripgrep, fd, bat, yq, glow, gh)
 8. Install Go (system-wide) and Node.js (per-user)
 
 ## Release process
