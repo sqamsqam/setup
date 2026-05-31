@@ -16,3 +16,6 @@ builds:
 
 archives:
   - formats: ['binary']
+
+checksum:
+  name_template: 'checksums.txt'

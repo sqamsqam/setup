@@ -1,4 +1,4 @@
-.PHONY: build test clean release
+.PHONY: build test vet lint check clean run-cli
 
 NAME    := setup
 BIN_DIR := bin
@@ -13,6 +13,7 @@ LDFLAGS := -s -w \
 	-X 'main.buildDate=$(DATE)'
 
 build:
+	mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(NAME)-linux-amd64 $(SRC)
 
 test:
@@ -20,6 +21,11 @@ test:
 
 vet:
 	go vet ./internal/... ./cmd/...
+
+lint:
+	golangci-lint run ./...
+
+check: vet test lint
 
 clean:
 	rm -rf $(BIN_DIR)
