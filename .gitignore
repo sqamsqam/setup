@@ -10,3 +10,8 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Go
+bin/
+vendor/
+go.sum
