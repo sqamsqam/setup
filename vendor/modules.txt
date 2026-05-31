@@ -42,6 +42,9 @@ github.com/muesli/cancelreader
 # github.com/rivo/uniseg v0.4.7
 ## explicit; go 1.18
 github.com/rivo/uniseg
+# github.com/urfave/cli/v3 v3.9.0
+## explicit; go 1.22
+github.com/urfave/cli/v3
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo

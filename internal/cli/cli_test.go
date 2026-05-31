@@ -2,17 +2,18 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 )
 
-func TestVersion(t *testing.T) {
+func TestVersionCommand(t *testing.T) {
 	SetVersion("test-version-1.0")
+	app := BuildApp(false, nil)
 
 	old := os.Stdout
 	r, w, _ := os.Pipe()
@@ -25,7 +26,10 @@ func TestVersion(t *testing.T) {
 		close(done)
 	}()
 
-	Run([]string{"version"})
+	err := app.Run(context.Background(), []string{"setup", "version"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	_ = w.Close()
 	os.Stdout = old
@@ -36,38 +40,51 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestHelpOutput(t *testing.T) {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+func TestVersionFlag(t *testing.T) {
+	SetVersion("test-version-1.0")
+	app := BuildApp(false, nil)
 
-	done := make(chan struct{})
 	var buf bytes.Buffer
-	go func() {
-		_, _ = io.Copy(&buf, r)
-		close(done)
-	}()
+	app.Writer = &buf
 
-	Run([]string{"--help"})
+	err := app.Run(context.Background(), []string{"setup", "--version"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "test-version-1.0") {
+		t.Errorf("expected version in output, got: %s", buf.String())
+	}
+}
 
-	_ = w.Close()
-	os.Stdout = old
-	<-done
+func TestHelpOutput(t *testing.T) {
+	app := BuildApp(false, nil)
 
-	if !strings.Contains(buf.String(), "Usage:") {
+	var buf bytes.Buffer
+	app.Writer = &buf
+
+	err := app.Run(context.Background(), []string{"setup", "--help"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "USAGE:") {
 		t.Errorf("expected help output, got: %s", buf.String())
 	}
 }
 
 func TestRunBootstrap(t *testing.T) {
-	var buf bytes.Buffer
-	runner := &setupexec.DryRunner{Stdout: &buf}
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	runBootstrap(runner, nil)
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	output := buf.String()
+	err := app.Run(context.Background(), []string{"setup", "bootstrap"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
 	if !strings.Contains(output, "[DRY-RUN]") {
 		t.Error("expected dry-run log output")
 	}
@@ -80,42 +97,80 @@ func TestRunBootstrap(t *testing.T) {
 }
 
 func TestRunBootstrapWithTimezoneEqualsFlag(t *testing.T) {
-	var buf bytes.Buffer
-	runner := &setupexec.DryRunner{Stdout: &buf}
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	runBootstrap(runner, []string{"--timezone=America/New_York"})
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	output := buf.String()
+	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--timezone=America/New_York"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
 	if !strings.Contains(output, "America/New_York") {
 		t.Errorf("expected America/New_York in output, got: %s", output)
 	}
 }
 
 func TestRunBootstrapWithTimezoneSpaceFlag(t *testing.T) {
-	var buf bytes.Buffer
-	runner := &setupexec.DryRunner{Stdout: &buf}
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	runBootstrap(runner, []string{"--timezone", "America/New_York"})
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	output := buf.String()
+	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--timezone", "America/New_York"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
 	if !strings.Contains(output, "America/New_York") {
 		t.Errorf("expected America/New_York in output, got: %s", output)
 	}
 }
 
-func TestRunAddUser(t *testing.T) {
-	var buf bytes.Buffer
-	runner := &setupexec.DryRunner{Stdout: &buf}
+func TestRunBootstrapWithShortFlag(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	runAddUser(runner, []string{"--user", "testuser", "--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="})
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	output := buf.String()
+	err := app.Run(context.Background(), []string{"setup", "bootstrap", "-t", "Europe/London"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
+	if !strings.Contains(output, "Europe/London") {
+		t.Errorf("expected Europe/London in output, got: %s", output)
+	}
+}
+
+func TestRunAddUser(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{
+		"setup", "add-user",
+		"--user", "testuser",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
 	if !strings.Contains(output, "testuser") {
 		t.Errorf("expected testuser in output, got: %s", output)
 	}
@@ -127,15 +182,47 @@ func TestRunAddUser(t *testing.T) {
 	}
 }
 
-func TestRunDryRunFull(t *testing.T) {
-	var buf bytes.Buffer
-	runner := &setupexec.DryRunner{Stdout: &buf}
+func TestRunAddUserShortFlags(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	runFull(runner, []string{"--user", "test", "--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="})
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	output := buf.String()
+	err := app.Run(context.Background(), []string{
+		"setup", "add-user",
+		"-u", "shorty",
+		"-k", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
+	if !strings.Contains(output, "shorty") {
+		t.Errorf("expected shorty in output, got: %s", output)
+	}
+}
+
+func TestRunDryRunFull(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{
+		"setup", "full",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
 	if !strings.Contains(output, "[DRY-RUN]") {
 		t.Error("expected dry-run output")
 	}
@@ -145,44 +232,65 @@ func TestRunDryRunFull(t *testing.T) {
 }
 
 func TestRunAddUserMissingFlags(t *testing.T) {
-	if os.Getenv("CLI_TEST_SUBPROCESS") == "1" {
-		SetVersion("test")
-		Run([]string{"add-user"})
-		return
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestRunAddUserMissingFlags")
-	cmd.Env = append(os.Environ(), "CLI_TEST_SUBPROCESS=1")
-	err := cmd.Run()
+	app := BuildApp(false, nil)
+
+	err := app.Run(context.Background(), []string{"setup", "add-user"})
 	if err == nil {
-		t.Fatal("expected exit code 1 for missing flags")
+		t.Fatal("expected error for missing required flags")
+	}
+}
+
+func TestRunAddUserMissingKey(t *testing.T) {
+	app := BuildApp(false, nil)
+
+	err := app.Run(context.Background(), []string{"setup", "add-user", "--user", "test"})
+	if err == nil {
+		t.Fatal("expected error for missing key")
 	}
 }
 
 func TestRunUnknownCommand(t *testing.T) {
-	if os.Getenv("CLI_TEST_SUBPROCESS") == "1" {
-		SetVersion("test")
-		Run([]string{"unknown_cmd"})
-		return
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestRunUnknownCommand")
-	cmd.Env = append(os.Environ(), "CLI_TEST_SUBPROCESS=1")
-	err := cmd.Run()
+	app := BuildApp(false, nil)
+
+	err := app.Run(context.Background(), []string{"setup", "unknown_cmd"})
 	if err == nil {
-		t.Fatal("expected exit code 1 for unknown command")
+		t.Fatal("expected error for unknown command")
 	}
 }
 
 func TestRunBootstrapUnknownFlag(t *testing.T) {
-	if os.Getenv("CLI_TEST_SUBPROCESS") == "1" {
-		var buf bytes.Buffer
-		runner := &setupexec.DryRunner{Stdout: &buf}
-		runBootstrap(runner, []string{"--unknown-flag"})
-		return
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestRunBootstrapUnknownFlag")
-	cmd.Env = append(os.Environ(), "CLI_TEST_SUBPROCESS=1")
-	err := cmd.Run()
+	app := BuildApp(false, nil)
+
+	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--unknown-flag"})
 	if err == nil {
-		t.Fatal("expected exit code 1 for unknown flag")
+		t.Fatal("expected error for unknown flag")
+	}
+}
+
+func TestInstallTools(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{"setup", "install-tools"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
+	if !strings.Contains(output, "[DRY-RUN]") {
+		t.Error("expected dry-run output")
+	}
+}
+
+func TestDevToolsMissingUser(t *testing.T) {
+	app := BuildApp(false, nil)
+
+	err := app.Run(context.Background(), []string{"setup", "devtools"})
+	if err == nil {
+		t.Fatal("error expected for missing --user")
 	}
 }
