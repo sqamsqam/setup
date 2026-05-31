@@ -10,7 +10,7 @@ import (
 )
 
 func InstallGo(runner setupexec.CmdRunner) error {
-	if isDryRun(runner) {
+	if setupexec.IsDryRun(runner) {
 		setupexec.PrintStep("Would download and install latest Go")
 		setupexec.PrintDone("Go installation skipped (dry-run)")
 		return nil
@@ -37,6 +37,19 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		return err
 	}
 
+	// Check if already installed and up to date
+	if out, err := runner.Output("/usr/local/go/bin/go", "version"); err == nil {
+		parts := strings.Fields(out)
+		if len(parts) >= 3 {
+			installedVersion := parts[2]
+			if installedVersion == version {
+				setupexec.PrintStep(fmt.Sprintf("Go %s already installed, skipping", version))
+				setupexec.PrintDone("Go installation skipped (up to date)")
+				return nil
+			}
+		}
+	}
+
 	tarball := version + ".linux-amd64.tar.gz"
 	downloadURL := "https://go.dev/dl/" + tarball
 	tmpTarball := "/tmp/" + tarball
@@ -60,7 +73,8 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("extract Go: %w", err)
 	}
 
-	profileContent := "export PATH=\"/usr/local/go/bin:$PATH\"\n"
+	profileContent := "# Managed by setup — do not edit\n"
+	profileContent += "export PATH=\"/usr/local/go/bin:$PATH\"\n"
 	tmpProfile := "/tmp/go-profile.sh"
 	if err := os.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
 		return fmt.Errorf("write temp go profile: %w", err)
@@ -115,7 +129,7 @@ func parseGoRelease(jsonData string) (version string, sha256 string, err error) 
 }
 
 func InstallNode(runner setupexec.CmdRunner, username string) error {
-	if isDryRun(runner) {
+	if setupexec.IsDryRun(runner) {
 		setupexec.PrintStep(fmt.Sprintf("Would install Node.js toolchain for %s", username))
 		setupexec.PrintDone("Node.js installation skipped (dry-run)")
 		return nil
@@ -197,13 +211,3 @@ func InstallAllDevTools(runner setupexec.CmdRunner, username string) error {
 	return nil
 }
 
-type dryRunner interface {
-	IsDryRun() bool
-}
-
-func isDryRun(runner setupexec.CmdRunner) bool {
-	if dr, ok := runner.(dryRunner); ok {
-		return dr.IsDryRun()
-	}
-	return false
-}

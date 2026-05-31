@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -24,6 +25,10 @@ func (m model) welcomeView() string {
 	s += "Press any key to continue, or q to quit.\n"
 	s += "\n"
 	s += helpStyle.Render("This tool will guide you through setting up a fresh container.\n")
+	s += "\n"
+	if os.Geteuid() != 0 {
+		s += errorStyle.Render("Requires root privileges — run with sudo.\n")
+	}
 	return s
 }
 
@@ -83,7 +88,7 @@ func (m model) inputKeyView() string {
 		display = dimStyle.Render("(paste your public key)")
 	}
 
-	s += "Key: " + display
+	s += "Key: " + truncateKey(display, 40)
 	s += "\n\n"
 	s += helpStyle.Render("paste key, then press enter · backspace delete · q quit")
 	return s

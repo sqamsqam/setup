@@ -71,6 +71,18 @@ sudo setup full --user <username> --key "<ssh-public-key>" [--timezone Australia
 setup version
 ```
 
+### Help
+
+Print usage information and per-command help:
+
+```bash
+setup --help
+setup bootstrap --help
+setup add-user --help
+setup devtools --help
+setup full --help
+```
+
 ### Dry run
 
 Add `--dry-run` before any CLI command to preview what would be executed
@@ -109,14 +121,19 @@ sudo setup full \
 ```
 
 This will:
-1. Generate locales, upgrade packages, install core utilities
-2. Harden SSH (pubkey-only, no root login, no passwords)
-3. Enable unattended security updates
-4. Install Docker
-5. Create the specified user with passwordless sudo
-6. Install the user's SSH public key
-7. Install CLI tools (ripgrep, fd, bat, yq, glow, gh)
-8. Install Go (system-wide) and Node.js (per-user)
+1. Generate locales
+2. Upgrade packages
+3. Install core utilities
+4. Enable unattended security updates
+5. Configure timezone
+6. Harden SSH (pubkey-only, no root login, no passwords)
+7. Lock root password
+8. Install Docker
+9. Enable and start SSH
+10. Create the specified user with passwordless sudo
+11. Install the user's SSH public key
+12. Install CLI tools (ripgrep, fd, bat, yq, glow, gh)
+13. Install Go (system-wide) and Node.js (per-user)
 
 ## Release process
 
@@ -165,9 +182,42 @@ internal/
 - Dry-run mode logs all shell commands without executing them
 - No interactive prompts in CLI mode
 - `DEBIAN_FRONTEND=noninteractive` is set for all apt operations
+- Go downloads are verified against the official SHA256 checksum
 - The Docker install script (`get.docker.com`) and fnm install script
   (`fnm.vercel.app`) are piped from their official sources — review them
   if you're running in an untrusted environment
+
+## Troubleshooting
+
+### apt lock contention
+
+If another process (e.g. unattended-upgrades) is holding the apt lock,
+the tool will fail with a lock error. Wait for the other process to finish
+and re-run the command.
+
+### Network timeouts during downloads
+
+Some downloads (Go tarball, fnm, Docker script, GitHub releases) may
+timeout on slow connections. The tool will print the error and exit.
+Re-running is safe — all install steps are idempotent.
+
+### Docker install failure
+
+The Docker install script fetches from `get.docker.com`. If it fails,
+check network connectivity and re-run. Existing Docker state is preserved
+on re-run.
+
+### Safe re-run after partial failure
+
+All provisioning steps are idempotent. If a step fails midway, fix the
+underlying issue (e.g. network, disk space) and re-run the same command.
+Already-completed steps will be skipped or produce no changes.
+
+### SSH lockout prevention
+
+Before restarting sshd, the tool validates the SSH configuration with
+`sshd -t`. If validation fails, the restart is skipped and you are
+left with a working SSH session while the config error is reported.
 
 ## License
 

@@ -1,12 +1,21 @@
 package user
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
 )
 
 var usernameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+
+var reservedUsernames = map[string]bool{
+	"root": true, "daemon": true, "bin": true, "sys": true,
+	"sync": true, "games": true, "man": true, "lp": true,
+	"mail": true, "news": true, "uucp": true, "proxy": true,
+	"www-data": true, "backup": true, "list": true, "irc": true,
+	"gnats": true, "nobody": true, "sshd": true,
+}
 
 var validKeyPrefixes = []string{
 	"ssh-rsa",
@@ -29,6 +38,13 @@ func ValidateUsername(name string) error {
 	if len(name) > 32 {
 		return fmt.Errorf("username too long: %d characters (max 32)", len(name))
 	}
+	lower := strings.ToLower(name)
+	if reservedUsernames[lower] {
+		return fmt.Errorf("username %q is reserved", name)
+	}
+	if strings.HasPrefix(lower, "systemd-") {
+		return fmt.Errorf("username %q uses reserved prefix", name)
+	}
 	return nil
 }
 
@@ -37,10 +53,27 @@ func ValidateSSHKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("SSH public key must not be empty")
 	}
+	var matched bool
 	for _, prefix := range validKeyPrefixes {
 		if strings.HasPrefix(key, prefix) {
-			return nil
+			matched = true
+			break
 		}
 	}
-	return fmt.Errorf("SSH public key does not start with a recognised key type prefix")
+	if !matched {
+		return fmt.Errorf("SSH public key does not start with a recognised key type prefix")
+	}
+
+	fields := strings.Fields(key)
+	if len(fields) < 2 {
+		return fmt.Errorf("SSH public key must have at least 2 fields (type and base64 data)")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(fields[1])
+	if err != nil {
+		return fmt.Errorf("SSH public key data is not valid base64: %w", err)
+	}
+	if len(decoded) < 16 {
+		return fmt.Errorf("SSH public key data is too short (%d bytes, minimum 16)", len(decoded))
+	}
+	return nil
 }

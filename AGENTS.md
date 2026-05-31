@@ -199,16 +199,36 @@ Good test targets:
 
 Do not unit test real provisioning side effects. Do not write tests that require mutating the host system.
 
+## GitHub Actions / CI
+
+CI workflow (`.github/workflows/ci.yml`):
+
+- Trigger: push to `main`, any pull request
+- Runs `go test ./internal/...`
+- Runs `go vet ./internal/... ./cmd/...`
+- Runs golangci-lint
+
 ## GitHub Actions / Releases
 
 Release workflow (`.github/workflows/release.yml`):
 
-- Trigger: push of tag matching `v*`
-- Runs `go test ./internal/...`
-- Runs `go vet ./internal/... ./cmd/...`
+- Trigger: push of tag matching semver `v[0-9]+.[0-9]+.[0-9]+`
+- Runs the same checks as CI
 - GoReleaser builds a single `linux/amd64` binary, attaches it to the release as `setup-linux-amd64`
+- A `checksums.txt` file is generated alongside the binary
 
 Configuration: `.goreleaser.yml`
+
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) format.
+
+Before tagging a release:
+1. Move the `(Unreleased)` heading under a new version heading
+2. Ensure all user-visible changes are documented under Added / Changed / Fixed / Security
+3. Open a PR to update the changelog, then tag after merge
+
+Every pull request with user-visible changes should add a corresponding entry under the Unreleased section.
 
 ## Makefile
 
@@ -218,6 +238,8 @@ Available targets:
 make build            # Build bin/setup-linux-amd64 (with ldflags: version, commit, date)
 make test             # go test ./internal/...
 make vet              # go vet ./internal/... ./cmd/...
+make lint             # golangci-lint run ./...
+make check            # Runs vet → test → lint in sequence
 make clean            # Remove bin/
 make run-cli ARGS="..."  # go run ./cmd/setup with given args
 ```

@@ -23,6 +23,16 @@ func TestValidateUsername(t *testing.T) {
 		{" spaces ", true},
 		{"with$pecial", true},
 		{string(make([]byte, 33)), true},
+		{"root", true},
+		{"ROOT", true},
+		{"Root", true},
+		{"nobody", true},
+		{"daemon", true},
+		{"sshd", true},
+		{"systemd-network", true},
+		{"systemd-resolve", true},
+		{"systemd-timesyncd", true},
+		{"systemd-", true},
 	}
 
 	for _, tt := range tests {
@@ -36,22 +46,26 @@ func TestValidateUsername(t *testing.T) {
 }
 
 func TestValidateSSHKey(t *testing.T) {
+	valid32 := "/B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="
+	valid57 := "DZZSN/oGYqFdRIPyP5gWaN/bHgqnD34e9xHclr1ZpSP5T56zYTHzjMkjh8wybwp1lGGtAYb5qOlN"
+
 	tests := []struct {
 		key     string
 		wantErr bool
 	}{
-		{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...", false},
-		{"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...", false},
-		{"ssh-dss AAAAB3NzaC1kc3MAAACBA...", false},
-		{"ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTY...", false},
-		{"ecdsa-sha2-nistp384 AAAAE2VjZHNhLXNoYTItbmlzdHAzODQ...", false},
-		{"ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjE...", false},
-		{"sk-ssh-ed25519 AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29t...", false},
-		{"sk-ecdsa-sha2-nistp256 AAAAGnNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3BlbnNza...", false},
+		{"ssh-ed25519 " + valid32, false},
+		{"ssh-rsa " + valid57, false},
+		{"ssh-dss " + valid32, false},
+		{"ecdsa-sha2-nistp256 " + valid32, false},
+		{"ecdsa-sha2-nistp384 " + valid32, false},
+		{"ecdsa-sha2-nistp521 " + valid32, false},
+		{"sk-ssh-ed25519 " + valid32, false},
+		{"sk-ecdsa-sha2-nistp256 " + valid32, false},
 		{"", true},
 		{"invalid key", true},
-		{"not-a-key-prefix AAAAB3...", true},
-		{"ssh-ed25519", false},
+		{"not-a-key-prefix " + valid57, true},
+		{"ssh-ed25519", true},
+		{"ssh-ed25519 invalid!!!base64", true},
 	}
 
 	for _, tt := range tests {

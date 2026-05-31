@@ -28,6 +28,25 @@ func (d *DryRunner) Run(name string, args ...string) error {
 
 func (d *DryRunner) Output(name string, args ...string) (string, error) {
 	d.log(name + " " + strings.Join(args, " "))
+
+	switch name {
+	case "dpkg":
+		if len(args) > 0 && args[0] == "--print-architecture" {
+			return "amd64", nil
+		}
+	case "getent":
+		if len(args) > 0 && args[0] == "passwd" {
+			return "user:x:1000:1000:User:/home/user:/bin/bash", nil
+		}
+	case "id":
+		return "uid=1000(user) gid=1000(user) groups=1000(user)", nil
+	}
+
+	return "", nil
+}
+
+func (d *DryRunner) CombinedOutput(name string, args ...string) (string, error) {
+	d.log("CombinedOutput: " + name + " " + strings.Join(args, " "))
 	return "", nil
 }
 

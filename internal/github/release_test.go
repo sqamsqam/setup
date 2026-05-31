@@ -75,3 +75,74 @@ func TestLatestReleaseAssetInvalidPattern(t *testing.T) {
 		t.Fatal("expected error for invalid regex pattern")
 	}
 }
+
+func TestLatestReleaseAssetEmptyAssets(t *testing.T) {
+	oldAPIBase := apiBase
+	oldClient := httpClient
+	t.Cleanup(func() {
+		apiBase = oldAPIBase
+		httpClient = oldClient
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := Release{Assets: []Asset{}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	SetAPIBase(server.URL)
+	SetHTTPClient(server.Client())
+	t.Setenv("GITHUB_TOKEN", "")
+
+	_, err := LatestReleaseAsset("owner/repo", `amd64\.deb$`)
+	if err == nil {
+		t.Fatal("expected error for empty assets")
+	}
+}
+
+func TestLatestReleaseAssetHTTP403(t *testing.T) {
+	oldAPIBase := apiBase
+	oldClient := httpClient
+	t.Cleanup(func() {
+		apiBase = oldAPIBase
+		httpClient = oldClient
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	SetAPIBase(server.URL)
+	SetHTTPClient(server.Client())
+	t.Setenv("GITHUB_TOKEN", "")
+
+	_, err := LatestReleaseAsset("owner/repo", `amd64\.deb$`)
+	if err == nil {
+		t.Fatal("expected error for 403 status")
+	}
+}
+
+func TestLatestReleaseAssetHTTP500(t *testing.T) {
+	oldAPIBase := apiBase
+	oldClient := httpClient
+	t.Cleanup(func() {
+		apiBase = oldAPIBase
+		httpClient = oldClient
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	SetAPIBase(server.URL)
+	SetHTTPClient(server.Client())
+	t.Setenv("GITHUB_TOKEN", "")
+
+	_, err := LatestReleaseAsset("owner/repo", `amd64\.deb$`)
+	if err == nil {
+		t.Fatal("expected error for 500 status")
+	}
+}

@@ -12,13 +12,15 @@ import (
 	"github.com/sqamsqam/setup/internal/user"
 )
 
-const defaultTimezone = "Australia/Sydney"
-
 func Run(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: setup <command> [options]\n")
-		fmt.Fprintf(os.Stderr, "Commands: bootstrap, add-user, install-tools, devtools, full, version\n")
+		printUsage()
 		os.Exit(1)
+	}
+
+	if args[0] == "--help" || args[0] == "-h" {
+		printUsage()
+		return
 	}
 
 	dryRun := false
@@ -38,6 +40,14 @@ func Run(args []string) {
 	for _, a := range remaining {
 		if a == "--dry-run" {
 			dryRun = true
+		}
+	}
+
+	// Check for help flags in remaining args
+	for _, a := range remaining {
+		if a == "--help" || a == "-h" {
+			printCommandHelp(cmd)
+			return
 		}
 	}
 
@@ -70,11 +80,93 @@ func Run(args []string) {
 	}
 }
 
+func printUsage() {
+	fmt.Println("Usage: setup [--dry-run] <command> [options]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  bootstrap               Locale, system update, base packages, SSH hardening,")
+	fmt.Println("                          unattended upgrades, Docker")
+	fmt.Println("                          Options: --timezone <zone> (default: Australia/Sydney)")
+	fmt.Println("  add-user                Create sudo user with SSH key auth")
+	fmt.Println("                          Options: --user <name> --key \"<ssh-public-key>\"")
+	fmt.Println("  install-tools           Install ripgrep, fd, bat, yq, glow, gh")
+	fmt.Println("  devtools                Install Go (system-wide) and Node.js (per-user)")
+	fmt.Println("                          Options: --user <name> [--all] [--go] [--node]")
+	fmt.Println("  full                    Run all steps in sequence")
+	fmt.Println("                          Options: --user <name> --key \"<pubkey>\"")
+	fmt.Println("                                   [--timezone <zone>]")
+	fmt.Println("  version                 Print version info")
+	fmt.Println()
+	fmt.Println("Global flags:")
+	fmt.Println("  --dry-run               Log commands without executing")
+}
+
+func printCommandHelp(cmd string) {
+	switch cmd {
+	case "bootstrap":
+		fmt.Println("Usage: setup bootstrap [--timezone <zone>]")
+		fmt.Println()
+		fmt.Println("Run root-level system bootstrap including locale generation, apt update")
+		fmt.Println("and upgrade, base package installation, SSH hardening, unattended")
+		fmt.Println("security upgrades, timezone configuration, and Docker installation.")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println("  --timezone <zone>  Timezone (default: Australia/Sydney)")
+	case "add-user":
+		fmt.Println("Usage: setup add-user --user <name> --key \"<ssh-public-key>\"")
+		fmt.Println()
+		fmt.Println("Create a sudo user with SSH key authentication. The user is granted")
+		fmt.Println("passwordless sudo, has linger enabled, and is added to the SSH")
+		fmt.Println("AllowUsers list.")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println("  --user <name>      Username for the new account")
+		fmt.Println("  --key \"<key>\"     SSH public key content")
+	case "install-tools":
+		fmt.Println("Usage: setup install-tools")
+		fmt.Println()
+		fmt.Println("Install CLI tools: ripgrep, fd, bat, yq, glow, gh.")
+		fmt.Println("Downloads from official sources and GitHub releases.")
+	case "devtools":
+		fmt.Println("Usage: setup devtools --user <name> [--all] [--go] [--node]")
+		fmt.Println()
+		fmt.Println("Install development toolchains. Go is installed system-wide from")
+		fmt.Println("go.dev (SHA256 verified). Node.js is installed per-user via fnm.")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println("  --user <name>  Target user for Node.js installation")
+		fmt.Println("  --all          Install both Go and Node.js")
+		fmt.Println("  --go           Install Go only")
+		fmt.Println("  --node         Install Node.js only")
+	case "full":
+		fmt.Println("Usage: setup full --user <name> --key \"<pubkey>\" [--timezone <zone>]")
+		fmt.Println()
+		fmt.Println("Run the entire provisioning flow: bootstrap, add-user, install-tools,")
+		fmt.Println("and devtools in sequence.")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println("  --user <name>      Username for the new account")
+		fmt.Println("  --key \"<pubkey>\"  SSH public key content")
+		fmt.Println("  --timezone <zone>  Timezone (default: Australia/Sydney)")
+	default:
+		printUsage()
+	}
+}
+
 func runBootstrap(runner setupexec.CmdRunner, args []string) {
-	tz := defaultTimezone
-	for _, a := range args {
-		if after, ok := strings.CutPrefix(a, "--timezone="); ok {
-			tz = after
+	tz := setupexec.DefaultTimezone
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--timezone" && i+1 < len(args):
+			tz = args[i+1]
+			i++
+		case strings.HasPrefix(args[i], "--timezone="):
+			tz = strings.TrimPrefix(args[i], "--timezone=")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", args[i])
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -98,6 +190,11 @@ func runAddUser(runner setupexec.CmdRunner, args []string) {
 			i++
 		case strings.HasPrefix(args[i], "--key="):
 			pubkey = strings.TrimPrefix(args[i], "--key=")
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", args[i])
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -138,6 +235,11 @@ func runDevTools(runner setupexec.CmdRunner, args []string) {
 			goOnly = true
 		case args[i] == "--node":
 			nodeOnly = true
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", args[i])
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -169,7 +271,7 @@ func runDevTools(runner setupexec.CmdRunner, args []string) {
 }
 
 func runFull(runner setupexec.CmdRunner, args []string) {
-	tz := defaultTimezone
+	tz := setupexec.DefaultTimezone
 	var username, pubkey string
 
 	for i := 0; i < len(args); i++ {
@@ -189,6 +291,11 @@ func runFull(runner setupexec.CmdRunner, args []string) {
 		case args[i] == "--timezone" && i+1 < len(args):
 			tz = args[i+1]
 			i++
+		default:
+			if strings.HasPrefix(args[i], "--") {
+				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", args[i])
+				os.Exit(1)
+			}
 		}
 	}
 

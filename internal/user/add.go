@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
@@ -33,7 +32,9 @@ func AddUser(runner setupexec.CmdRunner, username, pubkey string) error {
 	if err := runner.Run("usermod", "-aG", "sudo", username); err != nil {
 		return fmt.Errorf("add %s to sudo group: %w", username, err)
 	}
-	_ = runner.Run("usermod", "-aG", "docker", username)
+	if err := runner.Run("usermod", "-aG", "docker", username); err != nil {
+		setupexec.PrintError("Failed to add user to docker group (non-fatal)")
+	}
 
 	if err := writeSudoers(runner, username); err != nil {
 		return fmt.Errorf("configure sudoers: %w", err)
@@ -71,11 +72,12 @@ func ensureUser(runner setupexec.CmdRunner, username string) error {
 
 func writeSudoers(runner setupexec.CmdRunner, username string) error {
 	path := "/etc/sudoers.d/" + username
-	content := fmt.Sprintf(sudoersFormat, username)
+	content := "# Managed by setup — do not edit\n" + fmt.Sprintf(sudoersFormat, username)
 
 	setupexec.PrintStep(fmt.Sprintf("Writing %s", path))
 
 	tmpPath := "/tmp/sudoers-" + username
+	os.Remove(tmpPath)
 	if err := os.WriteFile(tmpPath, []byte(content), 0440); err != nil {
 		return fmt.Errorf("write temp sudoers: %w", err)
 	}
@@ -109,6 +111,7 @@ func installSSHKey(runner setupexec.CmdRunner, username, pubkey string) error {
 	authPath := sshDir + "/authorized_keys"
 	tmpPath := "/tmp/auth-" + username
 
+	os.Remove(tmpPath)
 	if err := os.WriteFile(tmpPath, []byte(pubkey+"\n"), 0600); err != nil {
 		return fmt.Errorf("write temp authorized_keys: %w", err)
 	}
@@ -126,12 +129,12 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 
 	setupexec.PrintStep("Updating SSH AllowUsers")
 
-	users, err := listNonSystemUsers()
+	users, err := listNonSystemUsers(runner)
 	if err != nil {
 		return fmt.Errorf("list non-system users: %w", err)
 	}
 
-	newContent := "AllowUsers " + strings.Join(users, " ") + "\n"
+	newContent := "# Managed by setup — do not edit\nAllowUsers " + strings.Join(users, " ") + "\n"
 
 	oldContent, _ := os.ReadFile(allowFile)
 	if bytes.Equal(oldContent, []byte(newContent)) {
@@ -143,6 +146,10 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("write temp AllowUsers: %w", err)
 	}
 
+	if err := runner.Run("sshd", "-t"); err != nil {
+		return fmt.Errorf("sshd configuration test failed — SSH not restarted to avoid lockout")
+	}
+
 	if err := runner.Run("mv", tmpFile, allowFile); err != nil {
 		return err
 	}
@@ -151,13 +158,12 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 	return runner.Run("systemctl", "restart", "ssh")
 }
 
-func listNonSystemUsers() ([]string, error) {
-	cmd := exec.Command("awk", "-F:", `$3 >= 1000 && $1 != "nobody" { print $1 }`, "/etc/passwd")
-	out, err := cmd.Output()
+func listNonSystemUsers(runner setupexec.CmdRunner) ([]string, error) {
+	out, err := runner.Output("awk", "-F:", `$3 >= 1000 && $1 != "nobody" { print $1 }`, "/etc/passwd")
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
 	var users []string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)

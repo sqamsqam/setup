@@ -52,7 +52,28 @@ func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
 
 	m.steps[msg.index].status = msg.status
 	m.steps[msg.index].output = msg.output
-	m.screen = screenDone
+
+	if msg.status == stepOK {
+		nextIdx := -1
+		for i := msg.index + 1; i < len(m.steps); i++ {
+			if m.stepFlags[i] && m.steps[i].status == stepPending {
+				nextIdx = i
+				break
+			}
+		}
+		if nextIdx >= 0 {
+			m.steps[nextIdx].status = stepRunning
+			return m, runProvisioning(m, nextIdx)
+		}
+		m.screen = screenDone
+		return m, nil
+	}
+
+	if msg.status == stepFail {
+		m.screen = screenDone
+		return m, nil
+	}
+
 	return m, nil
 }
 
@@ -80,9 +101,19 @@ func (m model) updateStepSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.cursor < len(m.steps)-1 {
 			m.cursor++
 		}
-	case " ", "enter":
+	case " ":
 		if m.cursor < len(m.stepFlags) {
 			m.stepFlags[m.cursor] = !m.stepFlags[m.cursor]
+		}
+	case "enter":
+		if m.hasSelections() {
+			if m.needsUserInput() {
+				m.screen = screenInputUser
+			} else if m.needsTimezoneInput() {
+				m.screen = screenInputTimezone
+			} else {
+				m.screen = screenConfirm
+			}
 		}
 	case "c":
 		if m.hasSelections() {
@@ -113,6 +144,9 @@ func (m model) updateInputUser(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.screen = screenConfirm
 			}
 		}
+	case "esc":
+		m.screen = screenStepSelect
+		return m, nil
 	case "backspace":
 		if len(m.username) > 0 {
 			m.username = m.username[:len(m.username)-1]
@@ -139,6 +173,9 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.screen = screenConfirm
 			}
 		}
+	case "esc":
+		m.screen = screenStepSelect
+		return m, nil
 	case "backspace":
 		if len(m.sshKey) > 0 {
 			m.sshKey = m.sshKey[:len(m.sshKey)-1]
@@ -159,6 +196,9 @@ func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.screen = screenConfirm
+	case "esc":
+		m.screen = screenStepSelect
+		return m, nil
 	case "backspace":
 		if len(m.timezone) > 0 {
 			m.timezone = m.timezone[:len(m.timezone)-1]
@@ -180,7 +220,13 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.screen = screenRunning
 		m.resetSteps()
-		return m, runProvisioning(m)
+		for i, f := range m.stepFlags {
+			if f {
+				m.steps[i].status = stepRunning
+				break
+			}
+		}
+		return m, runProvisioning(m, 0)
 	case "esc":
 		m.screen = screenStepSelect
 	}

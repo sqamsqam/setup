@@ -1,6 +1,7 @@
 package system
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -69,12 +70,17 @@ func installBasePackages(runner setupexec.CmdRunner) error {
 }
 
 func configureUnattendedUpgrades(runner setupexec.CmdRunner) error {
-	content := strings.TrimSpace(`
+	content := "# Managed by setup — do not edit\n" + strings.TrimSpace(`
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 `) + "\n"
+
+	oldContent, _ := os.ReadFile(autoUpgradesConfig)
+	if bytes.Equal(oldContent, []byte(content)) {
+		return nil
+	}
 
 	tmpPath := "/tmp/20auto-upgrades"
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
@@ -88,12 +94,15 @@ func setTimezone(runner setupexec.CmdRunner, tz string) error {
 }
 
 func hardenSSH(runner setupexec.CmdRunner) error {
-	content := `PermitRootLogin no
+	content := `# Managed by setup — do not edit
+PermitRootLogin no
 PubkeyAuthentication yes
 PasswordAuthentication no
 KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
 MaxAuthTries 3
 LoginGraceTime 30
+X11Forwarding no
 `
 	tmpPath := "/tmp/99-hardening.conf"
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
@@ -129,12 +138,11 @@ func sshdConfigValid(runner setupexec.CmdRunner) bool {
 }
 
 func lockRootPassword(runner setupexec.CmdRunner) error {
-	_ = runner.Run("passwd", "-l", "root")
-	return nil
+	return runner.Run("passwd", "-l", "root")
 }
 
 func installDocker(runner setupexec.CmdRunner) error {
-	return runner.Shell("curl -fsSL https://get.docker.com | sh")
+	return runner.Shell("set -euo pipefail; curl -fsSL https://get.docker.com | sh")
 }
 
 func startSSH(runner setupexec.CmdRunner) error {
