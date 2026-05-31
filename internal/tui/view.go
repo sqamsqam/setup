@@ -134,7 +134,7 @@ func (m model) confirmView() string {
 				s.WriteString(line + "\n")
 			} else if i == m.chainIdx {
 				prefix = cursorStyle.Render("►")
-				s.WriteString(fmt.Sprintf("  %s %s\n", prefix, stepNameStyle.Render(step.name)))
+				fmt.Fprintf(&s, "  %s %s\n", prefix, stepNameStyle.Render(step.name))
 			} else {
 				prefix = dimStyle.Render("[ ]")
 				line := dimStyle.Render(fmt.Sprintf("  %s %s", prefix, step.name))
@@ -194,7 +194,7 @@ func (m model) runningView() string {
 		s.WriteString("\n\n")
 
 		for i, step := range m.steps {
-			icon := statusIcon(step.status)
+			var icon string
 			if i == m.chainIdx && step.status == stepRunning {
 				icon = "[" + cursorStyle.Render(spinnerChar(m.spinnerFrame)) + "]"
 			} else {
@@ -208,12 +208,15 @@ func (m model) runningView() string {
 				}
 			}
 			line := fmt.Sprintf("  %s %s", icon, step.name)
-			if step.status == stepOK {
+			switch step.status {
+			case stepOK:
 				line = successStyle.Render(line)
-			} else if step.status == stepFail {
+			case stepFail:
 				line = errorStyle.Render(line)
-			} else if i != m.chainIdx {
-				line = dimStyle.Render(line)
+			default:
+				if i != m.chainIdx {
+					line = dimStyle.Render(line)
+				}
 			}
 			s.WriteString(line + "\n")
 		}
@@ -228,9 +231,10 @@ func (m model) runningView() string {
 		for _, step := range m.steps {
 			spinner := cursorStyle.Render(spinnerChar(m.spinnerFrame))
 			line := fmt.Sprintf("  %s %s", spinner, step.name)
-			if step.status == stepOK {
+			switch step.status {
+			case stepOK:
 				line = successStyle.Render(fmt.Sprintf("  [✓] %s", step.name))
-			} else if step.status == stepFail {
+			case stepFail:
 				line = errorStyle.Render(fmt.Sprintf("  [✗] %s — %s", step.name, step.output))
 			}
 			s.WriteString(line + "\n")
@@ -249,13 +253,12 @@ func (m model) doneView() string {
 		actionLabel := stepNames[m.effectiveAction()]
 		lastStep := m.chainIdx >= len(fullSetupChain)-1
 		s.WriteString(titleStyle.Render(fmt.Sprintf("Full Setup — %s complete", actionLabel)))
-		s.WriteString(fmt.Sprintf(" (%d/%d)", m.chainIdx+1, len(fullSetupChain)))
+		fmt.Fprintf(&s, " (%d/%d)", m.chainIdx+1, len(fullSetupChain))
 		s.WriteString("\n\n")
 
 		for _, step := range m.steps {
-			status := step.status
-			icon := statusIcon(status)
-			switch status {
+			var icon string
+			switch step.status {
 			case stepOK:
 				icon = successStyle.Render("[✓]")
 			case stepFail:
@@ -264,7 +267,7 @@ func (m model) doneView() string {
 				icon = dimStyle.Render("[ ]")
 			}
 			line := fmt.Sprintf("  %s %s", icon, step.name)
-			switch status {
+			switch step.status {
 			case stepOK:
 				line = successStyle.Render(line)
 			case stepFail:
@@ -291,7 +294,7 @@ func (m model) doneView() string {
 			s.WriteString(helpStyle.Render("enter back to menu · q quit"))
 		} else {
 			nextAct := fullSetupChain[m.chainIdx+1]
-			s.WriteString(fmt.Sprintf("Next: %s\n\n", stepNames[nextAct]))
+			fmt.Fprintf(&s, "Next: %s\n\n", stepNames[nextAct])
 			s.WriteString(helpStyle.Render("enter continue · esc back to menu · q quit"))
 		}
 	} else {
@@ -299,7 +302,7 @@ func (m model) doneView() string {
 		s.WriteString("\n\n")
 
 		for _, step := range m.steps {
-			icon := statusIcon(step.status)
+			var icon string
 			switch step.status {
 			case stepOK:
 				icon = successStyle.Render("[✓]")
