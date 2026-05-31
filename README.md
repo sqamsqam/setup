@@ -47,7 +47,21 @@ Run without arguments to launch the interactive provisioning interface:
 sudo setup
 ```
 
-Navigate with arrow keys, toggle steps with space, and follow the prompts.
+The TUI presents a **main menu** where you choose what to do:
+
+- **Full Setup** — Chains all four provisioning steps in sequence (Bootstrap
+  → Add User → CLI Tools → Dev Tools), each with its own guided wizard
+- **System Bootstrap** — Configure locale, SSH, Docker, unattended upgrades
+- **Add User** — Create a user with passwordless sudo and SSH key
+- **Install CLI Tools** — Install ripgrep, fd, bat, yq, glow, gh
+- **Install Dev Tools** — Install Go and Node.js toolchain
+
+Navigate with arrow keys and press enter to select. Each action follows a
+guided wizard flow — you only see the inputs relevant to that action. After
+an action completes you return to the main menu, so you can re-run individual
+steps at any time without restarting.
+
+Add `--dry-run` to preview what would happen without making changes:
 
 ### CLI mode (scripting / automation)
 

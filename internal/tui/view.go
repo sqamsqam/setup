@@ -16,74 +16,92 @@ var (
 	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
 	stepNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
+	progressStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
 )
 
-func (m model) welcomeView() string {
-	s := titleStyle.Render("Ubuntu LXC Provisioning Tool")
-	s += "\n\n"
-	s += "Target: Ubuntu 26.04 LXC container (amd64)\n"
-	s += "Press any key to continue, or q to quit.\n"
-	s += "\n"
-	s += helpStyle.Render("This tool will guide you through setting up a fresh container.\n")
-	s += "\n"
-	if os.Geteuid() != 0 {
-		s += errorStyle.Render("Requires root privileges — run with sudo.\n")
-	}
-	return s
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func spinnerChar(frame int) string {
+	return spinnerFrames[frame%len(spinnerFrames)]
 }
 
-func (m model) stepSelectView() string {
+func drawProgressBar(pct, width int) string {
+	if width <= 0 {
+		width = 20
+	}
+	filled := (pct * width) / 100
+	if filled > width {
+		filled = width
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return progressStyle.Render(strings.Repeat("█", filled)) +
+		dimStyle.Render(strings.Repeat("░", width-filled)) +
+		fmt.Sprintf(" %d%%", pct)
+}
+
+func (m model) mainMenuView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Select steps to run"))
+	s.WriteString(titleStyle.Render("Ubuntu LXC Provisioning Tool"))
 	s.WriteString("\n\n")
 
-	for i, step := range m.steps {
-		cursor := "  "
-		if m.cursor == i {
-			cursor = cursorStyle.Render("❯ ")
-		}
+	if os.Geteuid() != 0 {
+		s.WriteString(errorStyle.Render("WARNING: Not running as root. Provisioning may fail.\n"))
+		s.WriteString("\n")
+	}
 
-		checked := "[ ]"
-		if m.stepFlags[i] {
-			checked = successStyle.Render("[✓]")
+	for i, item := range m.menuItems {
+		prefix := "  "
+		if m.menuCursor == i {
+			prefix = cursorStyle.Render("► ")
 		}
-
-		line := cursor + checked + " " + stepNameStyle.Render(step.name)
-		if step.status != stepPending {
-			switch step.status {
-			case stepOK:
-				line += "  " + successStyle.Render("done")
-			case stepFail:
-				line += "  " + errorStyle.Render("failed")
-			case stepRunning:
-				line += "  " + cursorStyle.Render("running...")
-			}
-		}
-		s.WriteString(line + "\n")
+		s.WriteString(prefix + stepNameStyle.Render(item.label))
+		s.WriteString("\n")
+		s.WriteString("     " + dimStyle.Render(item.desc))
+		s.WriteString("\n")
 	}
 
 	s.WriteString("\n")
-	s.WriteString(helpStyle.Render("↑/↓ move · space toggle · c continue · q quit"))
+	s.WriteString(helpStyle.Render("↑/↓ move · enter select · q quit"))
+	if m.dryRun {
+		s.WriteString("\n")
+		s.WriteString(cursorStyle.Render("  DRY RUN — no changes will be made"))
+	}
 	return s.String()
 }
 
+func (m model) inputTimezoneView() string {
+	s := titleStyle.Render("Timezone")
+	s += "\n\n"
+	s += "Enter timezone for " + m.actionLabel() + ":\n\n"
+	s += "  " + cursorStyle.Render(m.timezone)
+	if m.timezone == "" {
+		s += dimStyle.Render(" (UTC)")
+	}
+	s += "\n\n"
+	s += helpStyle.Render("enter confirm · esc back · q quit")
+	return s
+}
+
 func (m model) inputUserView() string {
-	s := titleStyle.Render("Add user")
+	s := titleStyle.Render(m.actionLabel() + " — Username")
 	s += "\n\n"
 	s += "Username: " + cursorStyle.Render(m.username)
 	if m.username == "" {
 		s += dimStyle.Render(" (type to enter)")
 	}
-	s += "\n\n"
+	s += "\n"
 	if m.usernameErr != "" {
-		s += "\n" + errorStyle.Render("  ✗ "+m.usernameErr) + "\n"
+		s += errorStyle.Render("  ✗ " + m.usernameErr) + "\n"
 	}
-	s += helpStyle.Render("enter confirm · backspace delete · q quit")
+	s += "\n"
+	s += helpStyle.Render("enter confirm · esc back · q quit")
 	return s
 }
 
 func (m model) inputKeyView() string {
-	s := titleStyle.Render("SSH public key")
+	s := titleStyle.Render(m.actionLabel() + " — SSH Public Key")
 	s += "\n\n"
 
 	display := m.sshKey
@@ -93,56 +111,69 @@ func (m model) inputKeyView() string {
 
 	s += "Key: " + truncateKey(display, 40)
 	if m.sshKeyErr != "" {
-		s += "\n" + errorStyle.Render("  ✗ "+m.sshKeyErr) + "\n"
+		s += "\n" + errorStyle.Render("  ✗ " + m.sshKeyErr)
 	}
 	s += "\n\n"
-	s += helpStyle.Render("paste key, then press enter · backspace delete · q quit")
-	return s
-}
-
-func (m model) inputTimezoneView() string {
-	s := titleStyle.Render("Timezone")
-	s += "\n\n"
-	s += "Timezone: " + cursorStyle.Render(m.timezone)
-	s += "\n\n"
-	s += helpStyle.Render("enter confirm · backspace edit · q quit")
+	s += helpStyle.Render("paste key, then press enter · esc back · q quit")
 	return s
 }
 
 func (m model) confirmView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Confirm provisioning"))
 
-	s.WriteString("\n\n")
-	s.WriteString("The following steps will run:\n\n")
+	if m.isChain() {
+		s.WriteString(titleStyle.Render(fmt.Sprintf("Full Setup — %s (%d/%d)",
+			stepNames[m.effectiveAction()], m.chainIdx+1, len(fullSetupChain))))
+		s.WriteString("\n\n")
 
-	for i, f := range m.stepFlags {
-		if f {
-			s.WriteString("  • " + m.steps[i].name + "\n")
+		for i, step := range m.steps {
+			var prefix string
+			if i < m.chainIdx {
+				prefix = successStyle.Render("[✓]")
+				line := successStyle.Render(fmt.Sprintf("  %s %s", prefix, step.name))
+				s.WriteString(line + "\n")
+			} else if i == m.chainIdx {
+				prefix = cursorStyle.Render("►")
+				fmt.Fprintf(&s, "  %s %s\n", prefix, stepNameStyle.Render(step.name))
+			} else {
+				prefix = dimStyle.Render("[ ]")
+				line := dimStyle.Render(fmt.Sprintf("  %s %s", prefix, step.name))
+				s.WriteString(line + "\n")
+			}
 		}
+		s.WriteString("\n")
+	} else {
+		s.WriteString(titleStyle.Render(m.actionLabel()))
+		s.WriteString("\n\n")
 	}
 
-	// Show managed files
-	s.WriteString("\nManaged files:\n")
-	s.WriteString("  /etc/ssh/sshd_config.d/99-hardening.conf\n")
-	s.WriteString("  /etc/ssh/sshd_config.d/98-allow-users.conf\n")
-	if m.stepFlags[1] {
-		s.WriteString("  /etc/sudoers.d/<user>\n")
-		s.WriteString("  <home>/.ssh/authorized_keys\n")
-	}
-	if m.stepFlags[0] {
-		s.WriteString("  /etc/apt/apt.conf.d/20auto-upgrades\n")
-		s.WriteString("  /etc/profile.d/go.sh\n")
+	s.WriteString("Will perform:\n\n")
+	effAct := m.effectiveAction()
+	switch effAct {
+	case actionBootstrap:
+		s.WriteString("  • Configure locale, base packages, SSH hardening\n")
+		s.WriteString("  • Set up unattended security upgrades\n")
+		s.WriteString("  • Install Docker\n")
+	case actionAddUser:
+		s.WriteString("  • Create user account with passwordless sudo\n")
+		s.WriteString("  • Install SSH public key\n")
+		s.WriteString("  • Update SSH AllowUsers\n")
+	case actionInstallTools:
+		s.WriteString("  • Install ripgrep, fd, bat, yq, glow, gh\n")
+	case actionInstallDevTools:
+		s.WriteString("  • Install Go (system-wide)\n")
+		s.WriteString("  • Install Node.js toolchain (per-user via fnm)\n")
 	}
 
-	if m.needsUserInput() {
-		fmt.Fprintf(&s, "\n  Username: %s\n", m.username)
+	s.WriteString("\n")
+	if effAct == actionBootstrap {
+		fmt.Fprintf(&s, "  Timezone: %s\n", m.timezone)
 	}
-	if m.needsKeyInput() {
+	if effAct == actionAddUser || effAct == actionInstallDevTools {
+		fmt.Fprintf(&s, "  Username: %s\n", m.username)
+	}
+	if effAct == actionAddUser && m.sshKey != "" {
 		fmt.Fprintf(&s, "  SSH key: %s...\n", truncateKey(m.sshKey, 40))
-	}
-	if m.needsTimezoneInput() {
-		fmt.Fprintf(&s, "\n  Timezone: %s\n", m.timezone)
 	}
 
 	if m.dryRun {
@@ -156,30 +187,57 @@ func (m model) confirmView() string {
 
 func (m model) runningView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Running provisioning..."))
-	s.WriteString("\n\n")
 
-	for i, step := range m.steps {
-		if !m.stepFlags[i] {
-			s.WriteString(dimStyle.Render("  " + step.name + " (skipped)"))
-			s.WriteString("\n")
-			continue
+	if m.isChain() {
+		s.WriteString(titleStyle.Render(fmt.Sprintf("Full Setup — Step %d/%d",
+			m.chainIdx+1, len(fullSetupChain))))
+		s.WriteString("\n\n")
+
+		for i, step := range m.steps {
+			var icon string
+			if i == m.chainIdx && step.status == stepRunning {
+				icon = "[" + cursorStyle.Render(spinnerChar(m.spinnerFrame)) + "]"
+			} else {
+				switch step.status {
+				case stepOK:
+					icon = successStyle.Render("[✓]")
+				case stepFail:
+					icon = errorStyle.Render("[✗]")
+				default:
+					icon = dimStyle.Render("[ ]")
+				}
+			}
+			line := fmt.Sprintf("  %s %s", icon, step.name)
+			switch step.status {
+			case stepOK:
+				line = successStyle.Render(line)
+			case stepFail:
+				line = errorStyle.Render(line)
+			default:
+				if i != m.chainIdx {
+					line = dimStyle.Render(line)
+				}
+			}
+			s.WriteString(line + "\n")
 		}
-		icon := statusIcon(step.status)
-		line := fmt.Sprintf("  %s %s", icon, step.name)
-		switch step.status {
-		case stepOK:
-			line = successStyle.Render(line)
-		case stepFail:
-			line = errorStyle.Render(line)
-		case stepRunning:
-			line = cursorStyle.Render(line)
-		default:
-			line = dimStyle.Render(line)
-		}
-		s.WriteString(line + "\n")
-		if step.output != "" && step.status == stepFail {
-			s.WriteString("    " + errorStyle.Render(step.output) + "\n")
+
+		s.WriteString("\n")
+		s.WriteString(drawProgressBar(m.chainProgress(), 30))
+	} else {
+		act := m.effectiveAction()
+		s.WriteString(titleStyle.Render(stepNames[act]))
+		s.WriteString("\n\n")
+
+		for _, step := range m.steps {
+			spinner := cursorStyle.Render(spinnerChar(m.spinnerFrame))
+			line := fmt.Sprintf("  %s %s", spinner, step.name)
+			switch step.status {
+			case stepOK:
+				line = successStyle.Render(fmt.Sprintf("  [✓] %s", step.name))
+			case stepFail:
+				line = errorStyle.Render(fmt.Sprintf("  [✗] %s — %s", step.name, step.output))
+			}
+			s.WriteString(line + "\n")
 		}
 	}
 
@@ -190,35 +248,94 @@ func (m model) runningView() string {
 
 func (m model) doneView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Provisioning complete"))
-	s.WriteString("\n\n")
 
-	allOK := true
-	for i, f := range m.stepFlags {
-		if !f {
-			continue
-		}
-		icon := statusIcon(m.steps[i].status)
-		switch m.steps[i].status {
-		case stepOK:
-			s.WriteString(successStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n")
-		case stepFail:
-			s.WriteString(errorStyle.Render(fmt.Sprintf("  %s %s — %s", icon, m.steps[i].name, m.steps[i].output)) + "\n")
-			allOK = false
-		default:
-			s.WriteString(dimStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n")
-		}
-	}
+	if m.isChain() {
+		actionLabel := stepNames[m.effectiveAction()]
+		lastStep := m.chainIdx >= len(fullSetupChain)-1
+		s.WriteString(titleStyle.Render(fmt.Sprintf("Full Setup — %s complete", actionLabel)))
+		fmt.Fprintf(&s, " (%d/%d)", m.chainIdx+1, len(fullSetupChain))
+		s.WriteString("\n\n")
 
-	s.WriteString("\n")
-	if allOK {
-		s.WriteString(successStyle.Render("All steps completed successfully."))
+		for _, step := range m.steps {
+			var icon string
+			switch step.status {
+			case stepOK:
+				icon = successStyle.Render("[✓]")
+			case stepFail:
+				icon = errorStyle.Render("[✗]")
+			default:
+				icon = dimStyle.Render("[ ]")
+			}
+			line := fmt.Sprintf("  %s %s", icon, step.name)
+			switch step.status {
+			case stepOK:
+				line = successStyle.Render(line)
+			case stepFail:
+				line = errorStyle.Render(line + " — " + step.output)
+			default:
+				line = dimStyle.Render(line)
+			}
+			s.WriteString(line + "\n")
+		}
+
+		s.WriteString("\n")
+		if lastStep {
+			allOK := true
+			for _, step := range m.steps {
+				if step.status == stepFail {
+					allOK = false
+					break
+				}
+			}
+			if allOK {
+				s.WriteString(successStyle.Render("All steps completed successfully."))
+			}
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("enter back to menu · q quit"))
+		} else {
+			nextAct := fullSetupChain[m.chainIdx+1]
+			fmt.Fprintf(&s, "Next: %s\n\n", stepNames[nextAct])
+			s.WriteString(helpStyle.Render("enter continue · esc back to menu · q quit"))
+		}
 	} else {
-		s.WriteString(errorStyle.Render("Some steps failed. Check the output above."))
+		s.WriteString(titleStyle.Render("Task complete"))
+		s.WriteString("\n\n")
+
+		for _, step := range m.steps {
+			var icon string
+			switch step.status {
+			case stepOK:
+				icon = successStyle.Render("[✓]")
+			case stepFail:
+				icon = errorStyle.Render("[✗]")
+			default:
+				icon = dimStyle.Render("[ ]")
+			}
+			line := fmt.Sprintf("  %s %s", icon, step.name)
+			switch step.status {
+			case stepOK:
+				line = successStyle.Render(line)
+			case stepFail:
+				line = errorStyle.Render(line + " — " + step.output)
+			}
+			s.WriteString(line + "\n")
+		}
+
+		s.WriteString("\n")
+		allOK := true
+		for _, step := range m.steps {
+			if step.status == stepFail {
+				allOK = false
+				break
+			}
+		}
+		if allOK {
+			s.WriteString(successStyle.Render("Completed successfully."))
+		}
+		s.WriteString("\n\n")
+		s.WriteString(helpStyle.Render("enter back to menu · q quit"))
 	}
 
-	s.WriteString("\n\n")
-	s.WriteString(helpStyle.Render("Press any key to exit"))
 	return s.String()
 }
 
