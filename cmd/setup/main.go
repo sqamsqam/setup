@@ -40,7 +40,7 @@ func main() {
 
 	if !isCLI {
 		if !isRoot() {
-			os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
+			_, _ = os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
 		}
 		tui.Run(dryRun)
 		return
@@ -60,7 +60,7 @@ func main() {
 	cli.Run(args)
 
 	if !isRoot() && !isVersion {
-		os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
+		_, _ = os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
 	}
 }
 

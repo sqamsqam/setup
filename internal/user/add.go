@@ -81,8 +81,8 @@ func writeSudoers(runner setupexec.CmdRunner, username string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(content), 0440); err != nil {
 		return fmt.Errorf("write temp sudoers: %w", err)
@@ -152,8 +152,8 @@ func installSSHKey(runner setupexec.CmdRunner, username, pubkey string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(newData), 0600); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
@@ -189,8 +189,8 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("create temp AllowUsers file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("write temp AllowUsers: %w", err)

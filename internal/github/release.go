@@ -63,10 +63,10 @@ func LatestReleaseAsset(repo, pattern string) (string, error) {
 		if resp.StatusCode == http.StatusOK {
 			var release Release
 			if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return "", fmt.Errorf("decode release JSON: %w", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			re, err := regexp.Compile(pattern)
 			if err != nil {
@@ -85,14 +85,14 @@ func LatestReleaseAsset(repo, pattern string) (string, error) {
 		if resp.StatusCode == http.StatusForbidden {
 			remaining := resp.Header.Get("X-RateLimit-Remaining")
 			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if remaining == "0" || remaining == "" {
-				return "", fmt.Errorf("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable to increase the limit.")
+				return "", fmt.Errorf("GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable to increase the limit")
 			}
 			return "", fmt.Errorf("unexpected status %d from GitHub API: %s", resp.StatusCode, string(body))
 		}
 
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 			lastErr = fmt.Errorf("unexpected status %d from GitHub API", resp.StatusCode)

@@ -18,7 +18,7 @@ func NewDryRunner() *DryRunner {
 func (d *DryRunner) IsDryRun() bool { return true }
 
 func (d *DryRunner) log(cmd string) {
-	fmt.Fprintf(d.Stdout, "[DRY-RUN] %s\n", cmd)
+	_, _ = fmt.Fprintf(d.Stdout, "[DRY-RUN] %s\n", cmd)
 }
 
 func (d *DryRunner) Run(name string, args ...string) error {

@@ -136,13 +136,13 @@ func (m model) confirmView() string {
 	}
 
 	if m.needsUserInput() {
-		s.WriteString(fmt.Sprintf("\n  Username: %s\n", m.username))
+		fmt.Fprintf(&s, "\n  Username: %s\n", m.username)
 	}
 	if m.needsKeyInput() {
-		s.WriteString(fmt.Sprintf("  SSH key: %s...\n", truncateKey(m.sshKey, 40)))
+		fmt.Fprintf(&s, "  SSH key: %s...\n", truncateKey(m.sshKey, 40))
 	}
 	if m.needsTimezoneInput() {
-		s.WriteString(fmt.Sprintf("\n  Timezone: %s\n", m.timezone))
+		fmt.Fprintf(&s, "\n  Timezone: %s\n", m.timezone)
 	}
 
 	if m.dryRun {

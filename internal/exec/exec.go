@@ -150,13 +150,13 @@ func CheckCommand(cmd string) bool {
 }
 
 func PrintStep(msg string) {
-	fmt.Fprintf(printWriter, "→ %s\n", msg)
+	_, _ = fmt.Fprintf(printWriter, "→ %s\n", msg)
 }
 
 func PrintDone(msg string) {
-	fmt.Fprintf(printWriter, "✓ %s\n", msg)
+	_, _ = fmt.Fprintf(printWriter, "✓ %s\n", msg)
 }
 
 func PrintError(msg string) {
-	fmt.Fprintf(printWriter, "✗ %s\n", msg)
+	_, _ = fmt.Fprintf(printWriter, "✗ %s\n", msg)
 }

@@ -87,8 +87,8 @@ APT::Periodic::Unattended-Upgrade "1";
 		return err
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return err
@@ -120,8 +120,8 @@ MaxStartups 10:30:100
 		return err
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return err

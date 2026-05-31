@@ -21,13 +21,13 @@ func TestVersion(t *testing.T) {
 	done := make(chan struct{})
 	var buf bytes.Buffer
 	go func() {
-		io.Copy(&buf, r)
+		_, _ = io.Copy(&buf, r)
 		close(done)
 	}()
 
 	Run([]string{"version"})
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	<-done
 
@@ -44,13 +44,13 @@ func TestHelpOutput(t *testing.T) {
 	done := make(chan struct{})
 	var buf bytes.Buffer
 	go func() {
-		io.Copy(&buf, r)
+		_, _ = io.Copy(&buf, r)
 		close(done)
 	}()
 
 	Run([]string{"--help"})
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 	<-done
 

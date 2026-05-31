@@ -52,7 +52,7 @@ func TestInstallYqWithDryRunner(t *testing.T) {
 func TestInstallGitHubDebDryRunShortCircuit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"assets":[{"name":"ripgrep_14.1.0_amd64.deb","browser_download_url":"https://example.com/rg.deb"}]}`))
+		_, _ = w.Write([]byte(`{"assets":[{"name":"ripgrep_14.1.0_amd64.deb","browser_download_url":"https://example.com/rg.deb"}]}`))
 	}))
 	defer server.Close()
 

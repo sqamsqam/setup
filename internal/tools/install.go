@@ -64,12 +64,12 @@ func installGitHubDeb(runner setupexec.CmdRunner, repo, pattern string) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	debPath := tmpF.Name()
-	tmpF.Close()
+	_ = tmpF.Close()
 
 	if err := runner.Run("wget", "-q", debURL, "-O", debPath); err != nil {
 		return fmt.Errorf("download %s: %w", repo, err)
 	}
-	defer runner.Remove(debPath)
+	defer func() { _ = runner.Remove(debPath) }()
 
 	if err := verifyDebChecksum(runner, repo, debPath, debName); err != nil {
 		return err
@@ -105,7 +105,7 @@ func verifyDebChecksum(runner setupexec.CmdRunner, repo, debPath, debName string
 		setupexec.PrintStep("Warning: could not download checksum file, skipping verification for " + repo)
 		return nil
 	}
-	defer runner.Remove(tmpChecksum)
+	defer func() { _ = runner.Remove(tmpChecksum) }()
 
 	checksumContent, err := runner.ReadFile(tmpChecksum)
 	if err != nil {
@@ -152,7 +152,7 @@ func installYq(runner setupexec.CmdRunner) error {
 	if err := runner.Run("wget", "-q", shaURL, "-O", shaPath); err != nil {
 		return fmt.Errorf("download yq checksum: %w", err)
 	}
-	defer runner.Remove(shaPath)
+	defer func() { _ = runner.Remove(shaPath) }()
 
 	shaContent, err := runner.ReadFile(shaPath)
 	if err != nil {
@@ -224,8 +224,8 @@ func installGlow(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("create temp charm.list: %w", err)
 	}
 	tmpList := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpList)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpList) }()
 
 	if err := runner.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
 		return fmt.Errorf("write temp charm.list: %w", err)
@@ -294,8 +294,8 @@ func installGh(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("create temp github-cli.list: %w", err)
 	}
 	tmpList := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpList)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpList) }()
 
 	if err := runner.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
 		return fmt.Errorf("write temp github-cli.list: %w", err)

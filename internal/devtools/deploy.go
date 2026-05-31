@@ -72,8 +72,8 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpTarball := tmpFile.Name()
-	tmpFile.Close()
-	defer runner.Remove(tmpTarball)
+	_ = tmpFile.Close()
+	defer func() { _ = runner.Remove(tmpTarball) }()
 
 	setupexec.PrintStep(fmt.Sprintf("Downloading Go %s", version))
 
@@ -83,7 +83,7 @@ func InstallGo(runner setupexec.CmdRunner) error {
 
 	setupexec.PrintStep("Verifying checksum")
 	if err := runner.Shell(fmt.Sprintf("echo '%s  %s' | sha256sum -c --status", sha256, tmpTarball)); err != nil {
-		return fmt.Errorf("Go checksum verification failed")
+		return fmt.Errorf("go checksum verification failed")
 	}
 
 	if err := runner.RemoveAll("/usr/local/go"); err != nil {
@@ -100,8 +100,8 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("create temp profile: %w", err)
 	}
 	tmpProfile := tmpFile2.Name()
-	tmpFile2.Close()
-	defer runner.Remove(tmpProfile)
+	_ = tmpFile2.Close()
+	defer func() { _ = runner.Remove(tmpProfile) }()
 
 	if err := runner.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
 		return fmt.Errorf("write temp go profile: %w", err)
