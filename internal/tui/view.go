@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -9,8 +10,8 @@ import (
 
 var (
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
-	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
 	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
 	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
 	stepNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
@@ -24,6 +25,10 @@ func (m model) welcomeView() string {
 	s += "Press any key to continue, or q to quit.\n"
 	s += "\n"
 	s += helpStyle.Render("This tool will guide you through setting up a fresh container.\n")
+	s += "\n"
+	if os.Geteuid() != 0 {
+		s += errorStyle.Render("Requires root privileges — run with sudo.\n")
+	}
 	return s
 }
 
@@ -70,6 +75,9 @@ func (m model) inputUserView() string {
 		s += dimStyle.Render(" (type to enter)")
 	}
 	s += "\n\n"
+	if m.usernameErr != "" {
+		s += "\n" + errorStyle.Render("  ✗ "+m.usernameErr) + "\n"
+	}
 	s += helpStyle.Render("enter confirm · backspace delete · q quit")
 	return s
 }
@@ -83,7 +91,10 @@ func (m model) inputKeyView() string {
 		display = dimStyle.Render("(paste your public key)")
 	}
 
-	s += "Key: " + display
+	s += "Key: " + truncateKey(display, 40)
+	if m.sshKeyErr != "" {
+		s += "\n" + errorStyle.Render("  ✗ "+m.sshKeyErr) + "\n"
+	}
 	s += "\n\n"
 	s += helpStyle.Render("paste key, then press enter · backspace delete · q quit")
 	return s
@@ -111,14 +122,27 @@ func (m model) confirmView() string {
 		}
 	}
 
+	// Show managed files
+	s.WriteString("\nManaged files:\n")
+	s.WriteString("  /etc/ssh/sshd_config.d/99-hardening.conf\n")
+	s.WriteString("  /etc/ssh/sshd_config.d/98-allow-users.conf\n")
+	if m.stepFlags[1] {
+		s.WriteString("  /etc/sudoers.d/<user>\n")
+		s.WriteString("  <home>/.ssh/authorized_keys\n")
+	}
+	if m.stepFlags[0] {
+		s.WriteString("  /etc/apt/apt.conf.d/20auto-upgrades\n")
+		s.WriteString("  /etc/profile.d/go.sh\n")
+	}
+
 	if m.needsUserInput() {
-		s.WriteString(fmt.Sprintf("\n  Username: %s\n", m.username))
+		fmt.Fprintf(&s, "\n  Username: %s\n", m.username)
 	}
 	if m.needsKeyInput() {
-		s.WriteString(fmt.Sprintf("  SSH key: %s...\n", truncateKey(m.sshKey, 40)))
+		fmt.Fprintf(&s, "  SSH key: %s...\n", truncateKey(m.sshKey, 40))
 	}
 	if m.needsTimezoneInput() {
-		s.WriteString(fmt.Sprintf("\n  Timezone: %s\n", m.timezone))
+		fmt.Fprintf(&s, "\n  Timezone: %s\n", m.timezone)
 	}
 
 	if m.dryRun {

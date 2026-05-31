@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strings"
 
 	"github.com/sqamsqam/setup/internal/cli"
 	"github.com/sqamsqam/setup/internal/tui"
@@ -32,7 +31,8 @@ func main() {
 			continue
 		}
 		if a == "bootstrap" || a == "add-user" || a == "install-tools" ||
-			a == "devtools" || a == "full" || a == "version" {
+			a == "devtools" || a == "full" || a == "version" ||
+			a == "--help" || a == "-h" {
 			isCLI = true
 			break
 		}
@@ -40,16 +40,27 @@ func main() {
 
 	if !isCLI {
 		if !isRoot() {
-			os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
+			_, _ = os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
 		}
 		tui.Run(dryRun)
 		return
 	}
 
+	isVersion := false
+	for _, a := range args {
+		if a == "--dry-run" {
+			continue
+		}
+		if a == "version" || a == "--help" || a == "-h" {
+			isVersion = true
+			break
+		}
+	}
+
 	cli.Run(args)
 
-	if !isRoot() && !strings.HasPrefix(strings.Join(args, " "), "version") {
-		os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
+	if !isRoot() && !isVersion {
+		_, _ = os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
 	}
 }
 

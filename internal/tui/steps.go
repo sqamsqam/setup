@@ -10,7 +10,7 @@ import (
 	"github.com/sqamsqam/setup/internal/devtools"
 )
 
-func runProvisioning(m model) tea.Cmd {
+func runProvisioning(m model, startIdx int) tea.Cmd {
 	return func() tea.Msg {
 		steps := []struct {
 			idx int
@@ -35,18 +35,17 @@ func runProvisioning(m model) tea.Cmd {
 		}
 
 		for _, step := range steps {
-			idx := step.idx
-			if idx >= len(m.stepFlags) || !m.stepFlags[idx] {
+			if step.idx < startIdx || step.idx >= len(m.stepFlags) || !m.stepFlags[step.idx] {
 				continue
 			}
-
 			if m.dryRun {
-				continue
+				// In dry-run mode, show each step as "would run"
+				return stepStatusMsg{index: step.idx, status: stepOK, output: "(dry run)"}
 			}
-
 			if err := step.fn(); err != nil {
-				return stepStatusMsg{index: idx, status: stepFail, output: err.Error()}
+				return stepStatusMsg{index: step.idx, status: stepFail, output: err.Error()}
 			}
+			return stepStatusMsg{index: step.idx, status: stepOK}
 		}
 
 		return stepStatusMsg{quitting: true}
