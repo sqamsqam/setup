@@ -8,13 +8,13 @@ import (
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
-	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
-	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
-	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
+	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
+	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
+	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
 	stepNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
-	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#626262"))
 )
 
 func (m model) welcomeView() string {
@@ -28,8 +28,9 @@ func (m model) welcomeView() string {
 }
 
 func (m model) stepSelectView() string {
-	s := titleStyle.Render("Select steps to run")
-	s += "\n\n"
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Select steps to run"))
+	s.WriteString("\n\n")
 
 	for i, step := range m.steps {
 		cursor := "  "
@@ -53,12 +54,12 @@ func (m model) stepSelectView() string {
 				line += "  " + cursorStyle.Render("running...")
 			}
 		}
-		s += line + "\n"
+		s.WriteString(line + "\n")
 	}
 
-	s += "\n"
-	s += helpStyle.Render("↑/↓ move · space toggle · c continue · q quit")
-	return s
+	s.WriteString("\n")
+	s.WriteString(helpStyle.Render("↑/↓ move · space toggle · c continue · q quit"))
+	return s.String()
 }
 
 func (m model) inputUserView() string {
@@ -98,44 +99,46 @@ func (m model) inputTimezoneView() string {
 }
 
 func (m model) confirmView() string {
-	s := titleStyle.Render("Confirm provisioning")
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Confirm provisioning"))
 
-	s += "\n\n"
-	s += "The following steps will run:\n\n"
+	s.WriteString("\n\n")
+	s.WriteString("The following steps will run:\n\n")
 
 	for i, f := range m.stepFlags {
 		if f {
-			s += "  • " + m.steps[i].name + "\n"
+			s.WriteString("  • " + m.steps[i].name + "\n")
 		}
 	}
 
 	if m.needsUserInput() {
-		s += fmt.Sprintf("\n  Username: %s\n", m.username)
+		s.WriteString(fmt.Sprintf("\n  Username: %s\n", m.username))
 	}
 	if m.needsKeyInput() {
-		s += fmt.Sprintf("  SSH key: %s...\n", truncateKey(m.sshKey, 40))
+		s.WriteString(fmt.Sprintf("  SSH key: %s...\n", truncateKey(m.sshKey, 40)))
 	}
 	if m.needsTimezoneInput() {
-		s += fmt.Sprintf("\n  Timezone: %s\n", m.timezone)
+		s.WriteString(fmt.Sprintf("\n  Timezone: %s\n", m.timezone))
 	}
 
 	if m.dryRun {
-		s += "\n" + cursorStyle.Render("  DRY RUN — no changes will be made")
+		s.WriteString("\n" + cursorStyle.Render("  DRY RUN — no changes will be made"))
 	}
 
-	s += "\n\n"
-	s += helpStyle.Render("enter run · esc back · q quit")
-	return s
+	s.WriteString("\n\n")
+	s.WriteString(helpStyle.Render("enter run · esc back · q quit"))
+	return s.String()
 }
 
 func (m model) runningView() string {
-	s := titleStyle.Render("Running provisioning...")
-	s += "\n\n"
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Running provisioning..."))
+	s.WriteString("\n\n")
 
 	for i, step := range m.steps {
 		if !m.stepFlags[i] {
-			s += dimStyle.Render("  " + step.name + " (skipped)")
-			s += "\n"
+			s.WriteString(dimStyle.Render("  " + step.name + " (skipped)"))
+			s.WriteString("\n")
 			continue
 		}
 		icon := statusIcon(step.status)
@@ -150,20 +153,21 @@ func (m model) runningView() string {
 		default:
 			line = dimStyle.Render(line)
 		}
-		s += line + "\n"
+		s.WriteString(line + "\n")
 		if step.output != "" && step.status == stepFail {
-			s += "    " + errorStyle.Render(step.output) + "\n"
+			s.WriteString("    " + errorStyle.Render(step.output) + "\n")
 		}
 	}
 
-	s += "\n"
-	s += helpStyle.Render("Running... please wait")
-	return s
+	s.WriteString("\n")
+	s.WriteString(helpStyle.Render("Running... please wait"))
+	return s.String()
 }
 
 func (m model) doneView() string {
-	s := titleStyle.Render("Provisioning complete")
-	s += "\n\n"
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Provisioning complete"))
+	s.WriteString("\n\n")
 
 	allOK := true
 	for i, f := range m.stepFlags {
@@ -173,25 +177,25 @@ func (m model) doneView() string {
 		icon := statusIcon(m.steps[i].status)
 		switch m.steps[i].status {
 		case stepOK:
-			s += successStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n"
+			s.WriteString(successStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n")
 		case stepFail:
-			s += errorStyle.Render(fmt.Sprintf("  %s %s — %s", icon, m.steps[i].name, m.steps[i].output)) + "\n"
+			s.WriteString(errorStyle.Render(fmt.Sprintf("  %s %s — %s", icon, m.steps[i].name, m.steps[i].output)) + "\n")
 			allOK = false
 		default:
-			s += dimStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n"
+			s.WriteString(dimStyle.Render(fmt.Sprintf("  %s %s", icon, m.steps[i].name)) + "\n")
 		}
 	}
 
-	s += "\n"
+	s.WriteString("\n")
 	if allOK {
-		s += successStyle.Render("All steps completed successfully.")
+		s.WriteString(successStyle.Render("All steps completed successfully."))
 	} else {
-		s += errorStyle.Render("Some steps failed. Check the output above.")
+		s.WriteString(errorStyle.Render("Some steps failed. Check the output above."))
 	}
 
-	s += "\n\n"
-	s += helpStyle.Render("Press any key to exit")
-	return s
+	s.WriteString("\n\n")
+	s.WriteString(helpStyle.Render("Press any key to exit"))
+	return s.String()
 }
 
 func truncateKey(key string, max int) string {

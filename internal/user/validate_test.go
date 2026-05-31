@@ -51,7 +51,7 @@ func TestValidateSSHKey(t *testing.T) {
 		{"", true},
 		{"invalid key", true},
 		{"not-a-key-prefix AAAAB3...", true},
-		{"ssh-ed2551", false},
+		{"ssh-ed25519", false},
 	}
 
 	for _, tt := range tests {
@@ -62,11 +62,4 @@ func TestValidateSSHKey(t *testing.T) {
 			}
 		})
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -73,8 +73,8 @@ func Run(args []string) {
 func runBootstrap(runner setupexec.CmdRunner, args []string) {
 	tz := defaultTimezone
 	for _, a := range args {
-		if strings.HasPrefix(a, "--timezone=") {
-			tz = strings.TrimPrefix(a, "--timezone=")
+		if after, ok := strings.CutPrefix(a, "--timezone="); ok {
+			tz = after
 		}
 	}
 

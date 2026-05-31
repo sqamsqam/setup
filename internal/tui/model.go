@@ -34,6 +34,13 @@ type step struct {
 	output string
 }
 
+type stepStatusMsg struct {
+	index    int
+	status   stepStatus
+	output   string
+	quitting bool
+}
+
 type model struct {
 	screen    screen
 	width     int
@@ -42,11 +49,11 @@ type model struct {
 	steps     []step
 	stepFlags []bool
 
-	username  string
-	sshKey    string
-	timezone  string
-	dryRun    bool
-	quitting  bool
+	username string
+	sshKey   string
+	timezone string
+	dryRun   bool
+	quitting bool
 }
 
 func InitialModel(dryRun bool) model {
@@ -71,21 +78,21 @@ func (m model) Init() tea.Cmd {
 func (m model) View() tea.View {
 	switch m.screen {
 	case screenWelcome:
-		return m.welcomeView()
+		return tea.NewView(m.welcomeView())
 	case screenStepSelect:
-		return m.stepSelectView()
+		return tea.NewView(m.stepSelectView())
 	case screenInputUser:
-		return m.inputUserView()
+		return tea.NewView(m.inputUserView())
 	case screenInputKey:
-		return m.inputKeyView()
+		return tea.NewView(m.inputKeyView())
 	case screenInputTimezone:
-		return m.inputTimezoneView()
+		return tea.NewView(m.inputTimezoneView())
 	case screenConfirm:
-		return m.confirmView()
+		return tea.NewView(m.confirmView())
 	case screenRunning:
-		return m.runningView()
+		return tea.NewView(m.runningView())
 	case screenDone:
-		return m.doneView()
+		return tea.NewView(m.doneView())
 	}
 	return tea.NewView("Unknown screen\n")
 }
@@ -134,9 +141,6 @@ func statusIcon(s stepStatus) string {
 }
 
 func centerText(width int, text string) string {
-	padding := (width - len(text)) / 2
-	if padding < 0 {
-		padding = 0
-	}
+	padding := max((width-len(text))/2, 0)
 	return strings.Repeat(" ", padding) + text
 }

@@ -2,12 +2,13 @@ package exec
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
 
 type DryRunner struct {
-	Stdout *os.File
+	Stdout io.Writer
 }
 
 func NewDryRunner() *DryRunner {
