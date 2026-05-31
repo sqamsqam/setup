@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-31
+
 ### Added
 - Menu-driven TUI wizard replaces linear 7-screen flow: users choose an action first (Full Setup, System Bootstrap, Add User, Install CLI Tools, Install Dev Tools), then follow a guided wizard tailored to that action
 - Re-runnable individual actions — after completing one task the user returns to the main menu, enabling repeated use without restarting the tool
@@ -69,5 +71,6 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.3.0]: https://github.com/sqamsqam/setup/releases/tag/v0.3.0
 [0.2.0]: https://github.com/sqamsqam/setup/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sqamsqam/setup/releases/tag/v0.1.0
