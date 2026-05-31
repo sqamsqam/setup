@@ -82,7 +82,7 @@ Code lives under `internal/`. Each package has a clear, narrow purpose:
 ```
 cmd/setup/          Entry point — mode detection (TUI vs CLI), version injection
 internal/
-  cli/              CLI mode: hand-rolled arg parsing, subcommand routing, dry-run setup
+  cli/              CLI mode: subcommand routing with urfave/cli/v3, dry-run setup
   tui/              Bubble Tea v2 interactive terminal UI (model, view, update, run, steps)
   exec/             CmdRunner interface, RealRunner, DryRunner, helper formatters
   system/           Root bootstrap: locale, packages, SSH, unattended upgrades, Docker
@@ -124,16 +124,11 @@ Direct dependencies (fully vendored):
 
 - `charm.land/bubbletea/v2` — TUI framework
 - `charm.land/lipgloss/v2` — terminal styling
-
-No CLI framework is used. Argument parsing is hand-rolled with `strings.HasPrefix` / `strings.CutPrefix`. Keep it that way.
-
-Prefer the standard library unless a dependency provides clear value.
+- `github.com/urfave/cli/v3` — CLI framework (subcommand routing, flag parsing)
 
 ## CLI Parsing
 
-CLI arg parsing in `internal/cli/cli.go` is hand-rolled — no Cobra, no `flag` package. Flags use `--key=value` or `--key value` syntax. Global flag `--dry-run` can appear anywhere in the arg list.
-
-Do not introduce a CLI framework.
+CLI arg parsing in `internal/cli/cli.go` uses urfave/cli/v3. Flags use `--key=value` or `--key value` syntax. Global flag `--dry-run` can appear anywhere in the arg list and is filtered before the framework processes the command.
 
 ## Safety Rules
 
@@ -255,8 +250,6 @@ The README should cover: purpose, target environment, installation, interactive/
 Be practical. Prefer small, reviewable changes. Use clear names. Avoid speculative features.
 
 Do not add: configuration systems, plugins, daemons, background services, or remote orchestration unless explicitly requested.
-
-Do not introduce CLI frameworks, Dockerfiles, or CI beyond what already exists unless explicitly requested.
 
 ## Before Finishing
 
