@@ -13,5 +13,3 @@ Thumbs.db
 
 # Go
 bin/
-vendor/
-go.sum
