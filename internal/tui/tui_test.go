@@ -181,6 +181,40 @@ func TestBlankTimezoneDefaultsToUTC(t *testing.T) {
 	}
 }
 
+func TestFuzzyTimezoneMatches(t *testing.T) {
+	zones := []string{
+		"America/Chicago",
+		"America/Los_Angeles",
+		"America/New_York",
+		"Australia/Sydney",
+		"UTC",
+	}
+
+	matches := fuzzyTimezoneMatches("ny", zones, 3)
+	if len(matches) == 0 || matches[0] != "America/New_York" {
+		t.Fatalf("expected New York match first, got %#v", matches)
+	}
+
+	matches = fuzzyTimezoneMatches("los angeles", zones, 3)
+	if len(matches) == 0 || matches[0] != "America/Los_Angeles" {
+		t.Fatalf("expected Los Angeles match first, got %#v", matches)
+	}
+}
+
+func TestTabAcceptsFuzzyTimezoneMatch(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputTimezone
+	m.timezones = []string{"America/Chicago", "America/New_York", "UTC"}
+	m.timezoneInput.SetValue("ny")
+	m.refreshTimezoneMatches()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	got := updated.(model)
+	if got.timezoneInput.Value() != "America/New_York" {
+		t.Fatalf("expected accepted fuzzy match, got %q", got.timezoneInput.Value())
+	}
+}
+
 func TestEmptyUsernameShowsError(t *testing.T) {
 	m := InitialModel(false)
 	m.screen = screenInputUser

@@ -68,11 +68,36 @@ func (m model) inputTimezoneView() string {
 	body := "Timezone\n\n"
 	body += m.timezoneInput.View()
 	body += "\n\n"
-	body += dimStyle.Render("Use Tab to accept a suggestion. Blank defaults to UTC.")
+	body += m.timezoneMatchesView()
+	body += "\n\n"
+	body += dimStyle.Render("Fuzzy search is supported. Use Tab to accept, Up/Down to choose. Blank defaults to UTC.")
 	if m.inputErr != "" {
 		body += "\n\n" + errorStyle.Render(m.inputErr)
 	}
 	return m.page("System Bootstrap", "Set the container timezone.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) timezoneMatchesView() string {
+	if len(m.timezoneMatches) == 0 {
+		if strings.TrimSpace(m.timezoneInput.Value()) == "" {
+			return dimStyle.Render("Type to search timezones.")
+		}
+		return dimStyle.Render("No matching timezones.")
+	}
+	var b strings.Builder
+	for i, match := range m.timezoneMatches {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		prefix := "  "
+		style := dimStyle
+		if i == m.timezoneMatchIndex {
+			prefix = "> "
+			style = accentStyle
+		}
+		b.WriteString(style.Render(prefix + match))
+	}
+	return b.String()
 }
 
 func (m model) inputUserView() string {

@@ -176,14 +176,17 @@ type model struct {
 	planErr    string
 	inputErr   string
 
-	planList      list.Model
-	help          help.Model
-	usernameInput textinput.Model
-	timezoneInput textinput.Model
-	sshKeyInput   textarea.Model
-	spinner       spinner.Model
-	progress      progress.Model
-	output        viewport.Model
+	planList           list.Model
+	help               help.Model
+	usernameInput      textinput.Model
+	timezoneInput      textinput.Model
+	timezones          []string
+	timezoneMatches    []string
+	timezoneMatchIndex int
+	sshKeyInput        textarea.Model
+	spinner            spinner.Model
+	progress           progress.Model
+	output             viewport.Model
 
 	runSteps     []runStep
 	runningIndex int
@@ -249,8 +252,8 @@ func (m *model) initInputs() {
 	m.timezoneInput.Placeholder = "UTC"
 	m.timezoneInput.SetValue("UTC")
 	m.timezoneInput.SetWidth(48)
-	m.timezoneInput.ShowSuggestions = true
-	m.timezoneInput.SetSuggestions(availableTimezones())
+	m.timezones = availableTimezones()
+	m.refreshTimezoneMatches()
 
 	m.sshKeyInput = textarea.New()
 	m.sshKeyInput.Prompt = ""

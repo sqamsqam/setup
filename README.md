@@ -58,8 +58,10 @@ runs:
 
 Navigate with arrow keys, press space to toggle items, use `/` to filter the
 plan, and press enter to continue. The wizard only asks for inputs required by
-the selected plan. Running output is captured inside the TUI, and failed steps
-can be retried without rebuilding the plan.
+the selected plan. Timezone input supports fuzzy search with Tab to accept the
+highlighted match and Up/Down to choose between matches. Running output is
+captured inside the TUI, and failed steps can be retried without rebuilding the
+plan.
 
 Add `--dry-run` to preview what would happen without making changes:
 

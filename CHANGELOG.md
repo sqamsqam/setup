@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-01
+
+### Added
+- TUI timezone input now supports fuzzy searching and match selection.
+
 ## [0.5.0] - 2026-06-01
 
 ### Added
@@ -117,6 +122,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.5.1]: https://github.com/sqamsqam/setup/releases/tag/v0.5.1
 [0.5.0]: https://github.com/sqamsqam/setup/releases/tag/v0.5.0
 [0.4.2]: https://github.com/sqamsqam/setup/releases/tag/v0.4.2
 [0.4.1]: https://github.com/sqamsqam/setup/releases/tag/v0.4.1

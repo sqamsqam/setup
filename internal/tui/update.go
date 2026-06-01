@@ -11,10 +11,13 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/sahilm/fuzzy"
 	"github.com/sqamsqam/setup/internal/devtools"
 	"github.com/sqamsqam/setup/internal/tools"
 	"github.com/sqamsqam/setup/internal/user"
 )
+
+const maxTimezoneMatches = 8
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -39,6 +42,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenInputTimezone:
 			var cmd tea.Cmd
 			m.timezoneInput, cmd = m.timezoneInput.Update(msg)
+			m.refreshTimezoneMatches()
 			return m, cmd
 		case screenInputUser:
 			var cmd tea.Cmd
@@ -77,6 +81,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenInputTimezone:
 			var cmd tea.Cmd
 			m.timezoneInput, cmd = m.timezoneInput.Update(msg)
+			m.refreshTimezoneMatches()
 			return m, cmd
 		case screenInputUser:
 			var cmd tea.Cmd
@@ -130,11 +135,24 @@ func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Back):
 		m.inputErr = ""
 		return m.goBack()
+	case key.Matches(msg, m.timezoneInput.KeyMap.AcceptSuggestion):
+		m.acceptTimezoneMatch()
+		m.inputErr = ""
+		return m, nil
+	case key.Matches(msg, m.timezoneInput.KeyMap.NextSuggestion):
+		m.selectTimezoneMatch(1)
+		m.inputErr = ""
+		return m, nil
+	case key.Matches(msg, m.timezoneInput.KeyMap.PrevSuggestion):
+		m.selectTimezoneMatch(-1)
+		m.inputErr = ""
+		return m, nil
 	case key.Matches(msg, keys.Continue):
 		tz := strings.TrimSpace(m.timezoneInput.Value())
 		if tz == "" {
 			tz = "UTC"
 			m.timezoneInput.SetValue(tz)
+			m.refreshTimezoneMatches()
 		}
 		if err := validateTimezone(tz); err != nil {
 			m.inputErr = err.Error()
@@ -145,6 +163,7 @@ func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	default:
 		var cmd tea.Cmd
 		m.timezoneInput, cmd = m.timezoneInput.Update(msg)
+		m.refreshTimezoneMatches()
 		m.inputErr = ""
 		return m, cmd
 	}
@@ -484,6 +503,57 @@ func validateTimezone(tz string) error {
 		}
 	}
 	return fmt.Errorf("unknown timezone %q", tz)
+}
+
+func (m *model) refreshTimezoneMatches() {
+	m.timezoneMatches = fuzzyTimezoneMatches(m.timezoneInput.Value(), m.timezones, maxTimezoneMatches)
+	if m.timezoneMatchIndex >= len(m.timezoneMatches) {
+		m.timezoneMatchIndex = 0
+	}
+}
+
+func (m *model) acceptTimezoneMatch() {
+	if len(m.timezoneMatches) == 0 {
+		return
+	}
+	m.timezoneInput.SetValue(m.timezoneMatches[m.timezoneMatchIndex])
+	m.timezoneInput.CursorEnd()
+	m.refreshTimezoneMatches()
+}
+
+func (m *model) selectTimezoneMatch(delta int) {
+	if len(m.timezoneMatches) == 0 {
+		return
+	}
+	m.timezoneMatchIndex = (m.timezoneMatchIndex + delta + len(m.timezoneMatches)) % len(m.timezoneMatches)
+}
+
+func fuzzyTimezoneMatches(query string, zones []string, limit int) []string {
+	query = timezoneSearchPattern(query)
+	if query == "" || limit <= 0 {
+		return nil
+	}
+	matches := fuzzy.Find(query, zones)
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, match.Str)
+	}
+	return out
+}
+
+func timezoneSearchPattern(query string) string {
+	query = strings.TrimSpace(query)
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '/', '_', '-':
+			return -1
+		default:
+			return r
+		}
+	}, query)
 }
 
 func availableTimezones() []string {
