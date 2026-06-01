@@ -77,6 +77,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDone(msg)
 		}
 
+	case tea.MouseClickMsg:
+		switch m.screen {
+		case screenRunning, screenDone:
+			return m.updateRunMouse(msg)
+		}
+
 	default:
 		switch m.screen {
 		case screenInputTimezone:
@@ -247,6 +253,8 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.resize(m.width, m.height)
 		}
 		m.runningIndex = 0
+		m.selectedRunStep = 0
+		m.expandedRunStep = -1
 		m.runSteps[m.runningIndex].status = stepRunning
 		m.screen = screenRunning
 		m.output.SetContent("")
@@ -261,9 +269,19 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateRunning(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, keys.Quit) {
+	switch {
+	case key.Matches(msg, keys.Quit):
 		m.quitting = true
 		return m, tea.Quit
+	case m.matchesRunStepUp(msg):
+		m.selectRunStep(m.selectedRunStep - 1)
+		return m, nil
+	case m.matchesRunStepDown(msg):
+		m.selectRunStep(m.selectedRunStep + 1)
+		return m, nil
+	case key.Matches(msg, keys.Expand):
+		m.toggleExpandedRunStep(m.selectedRunStep)
+		return m, nil
 	}
 	return m.updateRunViewports(msg)
 }
@@ -276,15 +294,28 @@ func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Back):
 		m.resetToPlan()
 		return m, nil
-	case key.Matches(msg, keys.Continue):
+	case m.matchesRunStepUp(msg):
+		m.selectRunStep(m.selectedRunStep - 1)
+		return m, nil
+	case m.matchesRunStepDown(msg):
+		m.selectRunStep(m.selectedRunStep + 1)
+		return m, nil
+	case key.Matches(msg, keys.Show):
+		m.toggleExpandedRunStep(m.selectedRunStep)
+		return m, nil
+	case key.Matches(msg, keys.Retry):
 		if m.currentStepFailed() {
 			m.runSteps[m.runningIndex].status = stepRunning
 			m.runSteps[m.runningIndex].output = ""
+			m.selectedRunStep = m.runningIndex
+			m.expandedRunStep = -1
 			m.screen = screenRunning
 			m.refreshSteps()
 			m.refreshOutput()
 			return m, tea.Batch(runProvisioningStep(m), tickSpinner(m.spinner))
 		}
+		return m.updateRunViewports(msg)
+	case key.Matches(msg, keys.Continue):
 		m.resetToPlan()
 		return m, nil
 	default:
@@ -299,6 +330,19 @@ func (m model) updateRunViewports(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(stepsCmd, outputCmd)
 }
 
+func (m model) updateRunMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	mouse := msg.Mouse()
+	if mouse.Button != tea.MouseLeft {
+		return m.updateRunViewports(msg)
+	}
+	if index, ok := m.runStepIndexAt(mouse.X, mouse.Y); ok {
+		m.selectRunStep(index)
+		m.toggleExpandedRunStep(index)
+		return m, nil
+	}
+	return m.updateRunViewports(msg)
+}
+
 func tickSpinner(s spinner.Model) tea.Cmd {
 	return func() tea.Msg {
 		return s.Tick()
@@ -311,6 +355,10 @@ func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
 	}
 	m.runSteps[msg.index].status = msg.status
 	m.runSteps[msg.index].output = msg.output
+	m.selectedRunStep = msg.index
+	if msg.status == stepFail {
+		m.expandedRunStep = msg.index
+	}
 	m.refreshSteps()
 	m.refreshOutput()
 
@@ -328,6 +376,7 @@ func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.runningIndex = next
+	m.selectedRunStep = next
 	m.runSteps[next].status = stepRunning
 	m.refreshSteps()
 	m.refreshOutput()
@@ -486,6 +535,8 @@ func (m *model) resetToPlan() {
 	m.planErr = ""
 	m.runSteps = nil
 	m.runningIndex = -1
+	m.selectedRunStep = -1
+	m.expandedRunStep = -1
 	m.steps.SetContent("")
 	m.output.SetContent("")
 }
@@ -497,8 +548,8 @@ func (m *model) refreshConfirm() {
 
 func (m *model) refreshSteps() {
 	m.steps.SetContent(m.stepsContent())
-	if m.runningIndex >= 0 {
-		m.steps.EnsureVisible(m.runningIndex, 0, 0)
+	if m.selectedRunStep >= 0 {
+		m.steps.EnsureVisible(m.runStepStartLine(m.selectedRunStep), 0, 0)
 	}
 }
 
@@ -648,18 +699,120 @@ func (m model) buildRunSteps() []runStep {
 }
 
 func (m *model) refreshOutput() {
-	var b strings.Builder
-	for _, step := range m.runSteps {
-		if step.output == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
-		}
-		fmt.Fprintf(&b, "▶ %s\n%s", step.name, strings.TrimSpace(step.output))
+	if m.expandedRunStep < 0 || m.expandedRunStep >= len(m.runSteps) {
+		m.output.SetContent("")
+		m.output.GotoTop()
+		return
 	}
+
+	step := m.runSteps[m.expandedRunStep]
+	output := strings.TrimSpace(step.output)
+	if output == "" {
+		m.output.SetContent("")
+		m.output.GotoTop()
+		return
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "▶ %s\n%s", step.name, output)
 	m.output.SetContent(colorizeLog(truncateLogLines(b.String(), m.output.Width())))
 	m.output.GotoBottom()
+}
+
+func (m model) matchesRunStepUp(msg tea.KeyPressMsg) bool {
+	return key.Matches(msg, key.NewBinding(key.WithKeys("up", "k")))
+}
+
+func (m model) matchesRunStepDown(msg tea.KeyPressMsg) bool {
+	return key.Matches(msg, key.NewBinding(key.WithKeys("down", "j")))
+}
+
+func (m *model) selectRunStep(index int) {
+	if len(m.runSteps) == 0 {
+		m.selectedRunStep = -1
+		return
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(m.runSteps) {
+		index = len(m.runSteps) - 1
+	}
+	m.selectedRunStep = index
+	m.refreshSteps()
+}
+
+func (m *model) toggleExpandedRunStep(index int) {
+	if index < 0 || index >= len(m.runSteps) {
+		return
+	}
+	if m.expandedRunStep == index {
+		m.expandedRunStep = -1
+	} else {
+		m.expandedRunStep = index
+	}
+	m.refreshSteps()
+	m.refreshOutput()
+}
+
+func (m model) runStepIndexAt(x, y int) (int, bool) {
+	left, top, width, height := m.runStepViewportBounds()
+	if x < left || x >= left+width || y < top || y >= top+height {
+		return -1, false
+	}
+	return m.runStepAtContentLine(m.steps.YOffset() + y - top)
+}
+
+func (m model) runStepViewportBounds() (left, top, width, height int) {
+	top = m.runBodyTop() + 1
+	left = 2
+	width = m.steps.Width()
+	height = m.steps.Height()
+	return left, top, width, height
+}
+
+func (m model) runBodyTop() int {
+	switch m.screen {
+	case screenRunning:
+		return 4
+	case screenDone:
+		return 3
+	default:
+		return 0
+	}
+}
+
+func (m model) runStepAtContentLine(line int) (int, bool) {
+	if line < 0 {
+		return -1, false
+	}
+	for i := range m.runSteps {
+		start := m.runStepStartLine(i)
+		end := start + m.runStepRenderedLines(i)
+		if line >= start && line < end {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func (m model) runStepStartLine(index int) int {
+	line := 0
+	for i := 0; i < index && i < len(m.runSteps); i++ {
+		line += m.runStepRenderedLines(i)
+	}
+	return line
+}
+
+func (m model) runStepRenderedLines(index int) int {
+	if index < 0 || index >= len(m.runSteps) {
+		return 0
+	}
+	step := m.runSteps[index]
+	if step.desc != "" && step.status == stepPending {
+		return 2
+	}
+	return 1
 }
 
 func normalizeSSHKeyInput(s string) string {

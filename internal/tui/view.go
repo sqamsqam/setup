@@ -205,7 +205,7 @@ func (m model) runningView() string {
 	s.WriteString(m.runBodyView())
 	s.WriteString("\n\n")
 	m.help.SetWidth(contentWidth)
-	s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.Scroll, keys.Quit}}))
+	s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.StepNav, keys.Expand, keys.Scroll, keys.Quit}}))
 	return s.String()
 }
 
@@ -226,9 +226,9 @@ func (m model) doneView() string {
 	s.WriteString("\n\n")
 	m.help.SetWidth(m.runContentWidth())
 	if m.currentStepFailed() {
-		s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.Retry, keys.Back, keys.Scroll, keys.Quit}}))
+		s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.Retry, keys.Back, keys.StepNav, keys.Show, keys.Scroll, keys.Quit}}))
 	} else {
-		s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.Continue, keys.Scroll, keys.Quit}}))
+		s.WriteString(m.help.View(helpKeyMap{short: []key.Binding{keys.Continue, keys.StepNav, keys.Show, keys.Scroll, keys.Quit}}))
 	}
 	return s.String()
 }
@@ -260,9 +260,20 @@ func (m model) runBodyView() string {
 }
 
 func (m model) logPanelView() string {
+	title := "STEP OUTPUT"
+	if m.expandedRunStep >= 0 && m.expandedRunStep < len(m.runSteps) {
+		titleWidth := m.output.Width() - 18
+		if titleWidth < 1 {
+			titleWidth = 1
+		}
+		title = ansi.Truncate(m.runSteps[m.expandedRunStep].name, titleWidth, "…")
+		if title == "" {
+			title = "STEP OUTPUT"
+		}
+	}
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		logPanelTitleStyle.Render("OUTPUT LOG"),
+		logPanelTitleStyle.Render(title),
 		"  ",
 		statusStyle.Render(logScrollHint(m.output)),
 	)
@@ -272,12 +283,22 @@ func (m model) logPanelView() string {
 		bodyHeight = 1
 	}
 	body := m.logView(bodyHeight)
-	return header + "\n" + divider(m.output.Width()) + "\n" + body
+	dividerWidth := m.output.Width() - 2
+	if dividerWidth < 1 {
+		dividerWidth = 1
+	}
+	return header + "\n" + divider(dividerWidth) + "\n" + body
 }
 
 func (m model) logView(height int) string {
 	if strings.TrimSpace(m.output.GetContent()) == "" {
-		return dimStyle.Render("Log output will appear here.")
+		if m.expandedRunStep >= 0 && m.expandedRunStep < len(m.runSteps) {
+			return dimStyle.Render("This step has not produced output yet.")
+		}
+		if m.screen == screenDone {
+			return dimStyle.Render("Select a step and press space to view output.")
+		}
+		return dimStyle.Render("Select a step and press enter or space to view output.")
 	}
 	return lipgloss.NewStyle().Height(height).MaxHeight(height).Render(m.output.View())
 }
@@ -323,11 +344,18 @@ func (m model) page(title, subtitle, body string, bindings []key.Binding) string
 func (m model) stepsContent() string {
 	var s strings.Builder
 	for i, step := range m.runSteps {
-		icon := statusIcon(step.status)
-		if step.status == stepRunning {
-			icon = "[" + m.spinner.View() + "]"
+		selector := "  "
+		if i == m.selectedRunStep {
+			selector = selectedStripeStyle.Render("▌") + " "
 		}
-		line := fmt.Sprintf("%s %s", icon, step.name)
+		expander := " "
+		if step.output != "" {
+			expander = "▸"
+			if i == m.expandedRunStep {
+				expander = "▾"
+			}
+		}
+		line := fmt.Sprintf("%s %s %s", runStatusIcon(step.status, m.spinner.View()), expander, step.name)
 		switch step.status {
 		case stepOK:
 			line = successStyle.Render(line)
@@ -340,7 +368,7 @@ func (m model) stepsContent() string {
 				line = accentStyle.Render(line)
 			}
 		}
-		s.WriteString("  ")
+		s.WriteString(selector)
 		s.WriteString(line)
 		if step.desc != "" && step.status == stepPending {
 			s.WriteString("\n      ")
@@ -349,6 +377,13 @@ func (m model) stepsContent() string {
 		s.WriteString("\n")
 	}
 	return s.String()
+}
+
+func runStatusIcon(status stepStatus, spinnerView string) string {
+	if status == stepRunning {
+		return spinnerView
+	}
+	return statusIcon(status)
 }
 
 func errorBlock(message string) string {

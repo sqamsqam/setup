@@ -377,6 +377,7 @@ func TestRefreshOutputTruncatesLongLogLines(t *testing.T) {
 		status: stepOK,
 		output: strings.Repeat("x", 200),
 	}}
+	m.expandedRunStep = 0
 	m.output.SetWidth(40)
 	m.refreshOutput()
 
@@ -597,10 +598,10 @@ func TestStatusIcon(t *testing.T) {
 		status stepStatus
 		want   string
 	}{
-		{stepPending, "[ ]"},
-		{stepRunning, "[*]"},
-		{stepOK, "[✓]"},
-		{stepFail, "[✗]"},
+		{stepPending, "○"},
+		{stepRunning, "•"},
+		{stepOK, "✓"},
+		{stepFail, "✗"},
 	}
 
 	for _, tt := range tests {
@@ -608,6 +609,170 @@ func TestStatusIcon(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("statusIcon(%v) = %q, want %q", tt.status, got, tt.want)
 		}
+	}
+}
+
+func TestRunOutputHiddenByDefault(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = []runStep{{
+		name:   "System Bootstrap",
+		status: stepOK,
+		output: "apt update",
+	}}
+	m.output.SetWidth(80)
+	m.refreshOutput()
+
+	if got := strings.TrimSpace(m.output.GetContent()); got != "" {
+		t.Fatalf("expected collapsed output, got %q", got)
+	}
+}
+
+func TestEnterTogglesSelectedRunStepOutput(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenRunning
+	m.runSteps = []runStep{
+		{name: "System Bootstrap", status: stepOK, output: "bootstrap output"},
+		{name: "Install Go", status: stepOK, output: "go output"},
+	}
+	m.selectedRunStep = 1
+	m.expandedRunStep = -1
+	m.output.SetWidth(80)
+	m.refreshSteps()
+	m.refreshOutput()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.expandedRunStep != 1 {
+		t.Fatalf("expected step 1 expanded, got %d", got.expandedRunStep)
+	}
+	if content := got.output.GetContent(); !strings.Contains(content, "go output") || strings.Contains(content, "bootstrap output") {
+		t.Fatalf("unexpected expanded output: %q", content)
+	}
+
+	updated, _ = got.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got = updated.(model)
+	if got.expandedRunStep != -1 {
+		t.Fatalf("expected output collapsed, got %d", got.expandedRunStep)
+	}
+}
+
+func TestRunStepNavigationDoesNotChangeExpandedStep(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenRunning
+	m.runSteps = []runStep{
+		{name: "System Bootstrap", status: stepOK, output: "bootstrap output"},
+		{name: "Install Go", status: stepRunning},
+	}
+	m.selectedRunStep = 0
+	m.expandedRunStep = 0
+	m.refreshSteps()
+	m.refreshOutput()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	got := updated.(model)
+	if got.selectedRunStep != 1 {
+		t.Fatalf("expected selected step 1, got %d", got.selectedRunStep)
+	}
+	if got.expandedRunStep != 0 {
+		t.Fatalf("expected expanded step to remain 0, got %d", got.expandedRunStep)
+	}
+}
+
+func TestFailedStepAutoExpandsOutput(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenRunning
+	m.runningIndex = 0
+	m.runSteps = []runStep{{name: "System Bootstrap", status: stepRunning}}
+	m.output.SetWidth(80)
+
+	updated, _ := m.handleStepMsg(stepStatusMsg{index: 0, status: stepFail, output: "boom"})
+	got := updated.(model)
+	if got.expandedRunStep != 0 {
+		t.Fatalf("expected failed step expanded, got %d", got.expandedRunStep)
+	}
+	if !strings.Contains(got.output.GetContent(), "boom") {
+		t.Fatalf("expected failed output visible, got %q", got.output.GetContent())
+	}
+}
+
+func TestMouseClickTogglesRunStepOutput(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenRunning
+	m.runSteps = []runStep{
+		{name: "System Bootstrap", status: stepOK, output: "bootstrap output"},
+		{name: "Install Go", status: stepOK, output: "go output"},
+	}
+	m.selectedRunStep = 0
+	m.expandedRunStep = -1
+	m.resize(100, 24)
+	m.refreshSteps()
+	m.refreshOutput()
+
+	left, top, _, _ := m.runStepViewportBounds()
+	updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: left, Y: top + 1, Button: tea.MouseLeft}))
+	got := updated.(model)
+	if got.selectedRunStep != 1 || got.expandedRunStep != 1 {
+		t.Fatalf("expected clicked step selected and expanded, selected=%d expanded=%d", got.selectedRunStep, got.expandedRunStep)
+	}
+	if !strings.Contains(got.output.GetContent(), "go output") {
+		t.Fatalf("expected clicked step output, got %q", got.output.GetContent())
+	}
+}
+
+func TestMouseClickTogglesRunStepOutputStackedLayout(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenRunning
+	m.runSteps = []runStep{
+		{name: "System Bootstrap", status: stepOK, output: "bootstrap output"},
+		{name: "Install Go", status: stepOK, output: "go output"},
+	}
+	m.selectedRunStep = 0
+	m.expandedRunStep = -1
+	m.resize(80, 24)
+	m.refreshSteps()
+	m.refreshOutput()
+
+	left, top, _, _ := m.runStepViewportBounds()
+	updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: left, Y: top + 1, Button: tea.MouseLeft}))
+	got := updated.(model)
+	if got.selectedRunStep != 1 || got.expandedRunStep != 1 {
+		t.Fatalf("expected stacked clicked step selected and expanded, selected=%d expanded=%d", got.selectedRunStep, got.expandedRunStep)
+	}
+	if !strings.Contains(got.output.GetContent(), "go output") {
+		t.Fatalf("expected clicked step output, got %q", got.output.GetContent())
+	}
+}
+
+func TestMouseClickTogglesRunStepOutputFailedDoneLayout(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenDone
+	m.runningIndex = 0
+	m.runSteps = []runStep{
+		{name: "System Bootstrap", status: stepFail, output: "boom"},
+		{name: "Install Go", status: stepPending},
+	}
+	m.selectedRunStep = 0
+	m.expandedRunStep = 0
+	m.resize(80, 24)
+	m.refreshSteps()
+	m.refreshOutput()
+
+	left, top, _, _ := m.runStepViewportBounds()
+	updated, _ := m.Update(tea.MouseClickMsg(tea.Mouse{X: left, Y: top, Button: tea.MouseLeft}))
+	got := updated.(model)
+	if got.selectedRunStep != 0 || got.expandedRunStep != -1 {
+		t.Fatalf("expected failed done click to collapse selected step, selected=%d expanded=%d", got.selectedRunStep, got.expandedRunStep)
+	}
+	if strings.TrimSpace(got.output.GetContent()) != "" {
+		t.Fatalf("expected collapsed output, got %q", got.output.GetContent())
+	}
+}
+
+func TestViewEnablesMouse(t *testing.T) {
+	m := InitialModel(false)
+	view := m.View()
+	if view.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("expected mouse cell motion, got %v", view.MouseMode)
 	}
 }
 

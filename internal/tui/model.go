@@ -172,6 +172,9 @@ type runStep struct {
 
 type tuiKeys struct {
 	Toggle   key.Binding
+	Expand   key.Binding
+	Show     key.Binding
+	StepNav  key.Binding
 	Select   key.Binding
 	Continue key.Binding
 	Back     key.Binding
@@ -182,6 +185,9 @@ type tuiKeys struct {
 
 var keys = tuiKeys{
 	Toggle:   key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
+	Expand:   key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter/space", "show output")),
+	Show:     key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "show output")),
+	StepNav:  key.NewBinding(key.WithKeys("up/down", "k/j"), key.WithHelp("up/down", "select step")),
 	Select:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
 	Continue: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
 	Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
@@ -228,8 +234,10 @@ type model struct {
 	steps              viewport.Model
 	output             viewport.Model
 
-	runSteps     []runStep
-	runningIndex int
+	runSteps        []runStep
+	runningIndex    int
+	selectedRunStep int
+	expandedRunStep int
 
 	width, height int
 	dryRun        bool
@@ -243,17 +251,19 @@ func InitialModel(dryRun bool) model {
 
 func InitialModelWithMode(dryRun, demo bool) model {
 	m := model{
-		screen:       screenMainMenu,
-		selections:   defaultSelections(),
-		dryRun:       dryRun,
-		demo:         demo,
-		help:         help.New(),
-		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
-		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color(colorAccent))),
-		confirm:      viewport.New(),
-		steps:        viewport.New(),
-		output:       viewport.New(),
-		runningIndex: -1,
+		screen:          screenMainMenu,
+		selections:      defaultSelections(),
+		dryRun:          dryRun,
+		demo:            demo,
+		help:            help.New(),
+		spinner:         spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
+		progress:        progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color(colorAccent))),
+		confirm:         viewport.New(),
+		steps:           viewport.New(),
+		output:          viewport.New(),
+		runningIndex:    -1,
+		selectedRunStep: -1,
+		expandedRunStep: -1,
 	}
 	m.confirm.SoftWrap = true
 	m.confirm.FillHeight = true
@@ -295,6 +305,7 @@ func (m model) View() tea.View {
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
@@ -432,6 +443,9 @@ func (m *model) resize(width, height int) {
 	outputWidth, outputHeight := m.outputSize()
 	m.output.SetWidth(outputWidth)
 	m.output.SetHeight(outputHeight)
+	if len(m.runSteps) > 0 {
+		m.refreshOutput()
+	}
 
 	progressWidth := m.runContentWidth() - 12
 	if progressWidth < 18 {
@@ -608,15 +622,15 @@ func (m model) completedRunSteps() int {
 func statusIcon(s stepStatus) string {
 	switch s {
 	case stepPending:
-		return "[ ]"
+		return "○"
 	case stepRunning:
-		return "[*]"
+		return "•"
 	case stepOK:
-		return "[✓]"
+		return "✓"
 	case stepFail:
-		return "[✗]"
+		return "✗"
 	default:
-		return "[ ]"
+		return "○"
 	}
 }
 

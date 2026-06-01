@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-06-01
+
+### Changed
+- TUI run-step statuses now use compact glyph styling with a clear success tick.
+- TUI step output is hidden by default and can be expanded per step with keyboard or mouse input.
+- Demo success recording now shows expanded step output in the generated visual assets.
+
 ## [0.8.4] - 2026-06-01
 
 ### Changed

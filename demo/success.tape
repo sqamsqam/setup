@@ -46,5 +46,7 @@ Sleep 1100ms
 Enter
 Wait+Screen /Fresh setup complete/
 Sleep 1200ms
+Space
+Sleep 700ms
 Screenshot "docs/assets/screenshots/success.png"
 Sleep 1500ms
