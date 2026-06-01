@@ -31,7 +31,11 @@ const (
 func InstallGo(runner setupexec.CmdRunner) error {
 	if setupexec.IsDryRun(runner) {
 		setupexec.PrintStep("Would download and install latest Go")
-		setupexec.PrintDone("Go installation skipped (dry-run)")
+		if setupexec.IsDemo(runner) {
+			setupexec.PrintDone("Go installation skipped")
+		} else {
+			setupexec.PrintDone("Go installation skipped (dry-run)")
+		}
 		return nil
 	}
 

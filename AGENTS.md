@@ -82,7 +82,7 @@ Code lives under `internal/`. Each package has a clear, narrow purpose:
 ```
 cmd/setup/          Entry point — mode detection (TUI vs CLI), version injection
 internal/
-  cli/              CLI mode: subcommand routing with urfave/cli/v3, dry-run setup
+  cli/              CLI mode: subcommand routing with urfave/cli/v3, dry-run/demo setup
   tui/              Bubble Tea v2 interactive terminal UI (model, view, update, run, steps)
   exec/             CmdRunner interface, RealRunner, DryRunner, helper formatters
   system/           Root bootstrap: locale, packages, SSH, unattended upgrades, Docker
@@ -111,6 +111,7 @@ Two implementations:
 
 - `RealRunner` — executes real OS commands via `os/exec`. Sets `DEBIAN_FRONTEND=noninteractive` in CLI mode.
 - `DryRunner` — logs `[DRY-RUN]` to stderr without executing anything.
+- `DemoRunner` — uses the same non-mutating execution path as dry-run, but suppresses dry-run labels for public demos.
 
 `RealRunner.RunAsUser` shells out via `sudo -iu <user> -- <cmd>`. `RealRunner.Shell` runs a script through `bash -c` (used for Docker get.docker.com and fnm install scripts).
 
@@ -128,7 +129,7 @@ Direct dependencies (fully vendored):
 
 ## CLI Parsing
 
-CLI arg parsing in `internal/cli/cli.go` uses urfave/cli/v3. Flags use `--key=value` or `--key value` syntax. Global flag `--dry-run` can appear anywhere in the arg list and is filtered before the framework processes the command.
+CLI arg parsing in `internal/cli/cli.go` uses urfave/cli/v3. Flags use `--key=value` or `--key value` syntax. Global flags `--dry-run` and `--demo` can appear anywhere in the arg list and are filtered before the framework processes the command.
 
 ## Safety Rules
 
@@ -202,6 +203,7 @@ CI workflow (`.github/workflows/ci.yml`):
 - Runs `go test ./internal/...`
 - Runs `go vet ./internal/... ./cmd/...`
 - Runs golangci-lint
+- Runs `make review-ui` in a separate visual job and uploads `docs/assets` as a CI artifact
 
 ## GitHub Actions / Releases
 
@@ -235,9 +237,31 @@ make test             # go test ./internal/...
 make vet              # go vet ./internal/... ./cmd/...
 make lint             # golangci-lint run ./...
 make check            # Runs vet → test → lint in sequence
+make install-visual-tools # Install pinned VHS plus ffmpeg/ttyd/browser runtime dependencies
+make screenshots      # Generate PNG screenshots from demo/screenshots/*.tape
+make demo-gif         # Generate supporting GIFs from demo/*.tape
+make golden-demo      # Generate docs/assets/golden-demo.gif
+make bake             # Alias for the happy-path golden demo animation
+make visual-test      # Validate VHS tapes and generated visual assets
+make review-ui        # Install/check visual tools, regenerate screenshots/GIFs/golden demo, validate outputs
 make clean            # Remove bin/
 make run-cli ARGS="..."  # go run ./cmd/setup with given args
 ```
+
+## Visual Review
+
+Visual assets are generated with Charm VHS and must use demo mode only. VHS tapes live under `demo/`; generated outputs live under `docs/assets/`.
+
+When changing any visual aspect of the TUI or CLI presentation:
+
+1. Update or add VHS tapes under `demo/` if the workflow, layout, states, or expected output changed.
+2. Use `--demo` for every visual tape; do not require credentials, network services, or live host state.
+3. Run `make review-ui`.
+4. Review `docs/assets/golden-demo.gif`, `docs/assets/gifs/*.gif`, and `docs/assets/screenshots/*.png`.
+5. Include generated artifact paths in the final report.
+6. Mention visual regressions, notable visual changes, and any limitations.
+
+Do not consider visual work complete until screenshots, GIFs, and the golden demo have been regenerated and reviewed.
 
 ## Documentation
 

@@ -20,9 +20,14 @@ import (
 	"github.com/sqamsqam/setup/internal/user"
 )
 
-func newWizardRunner(dryRun bool, output io.Writer) setupexec.CmdRunner {
+func newWizardRunner(dryRun, demo bool, output io.Writer) setupexec.CmdRunner {
 	if output == nil {
 		output = io.Discard
+	}
+	if demo {
+		dr := setupexec.NewDemoRunner()
+		dr.Stdout = output
+		return dr
 	}
 	if dryRun {
 		dr := setupexec.NewDryRunner()
@@ -97,13 +102,16 @@ func runProvisioningStep(m model) tea.Cmd {
 		setupexec.SetPrintWriter(&out)
 		defer setupexec.SetPrintWriter(io.Discard)
 
-		runner := newWizardRunner(m.dryRun, &out)
+		runner := newWizardRunner(m.dryRun, m.demo, &out)
 		step := m.runSteps[stepIdx]
 		err := runStepWithRunner(runner, m, step)
 		output := strings.TrimSpace(out.String())
 
-		if m.dryRun && err == nil && output == "" {
+		if (m.dryRun || m.demo) && err == nil && output == "" {
 			output = "(dry run)"
+			if m.demo {
+				output = "(no output)"
+			}
 		}
 		if err != nil {
 			if output != "" {

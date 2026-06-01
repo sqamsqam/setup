@@ -37,6 +37,16 @@ func TestInitialModelDryRun(t *testing.T) {
 	}
 }
 
+func TestInitialModelDemoMode(t *testing.T) {
+	m := InitialModelWithMode(false, true)
+	if !m.demo {
+		t.Error("expected demo to be true")
+	}
+	if strings.Contains(m.mainMenuView(), "DRY RUN") {
+		t.Fatal("demo mode should not render dry-run banner")
+	}
+}
+
 func TestSelectionRequirements(t *testing.T) {
 	s := selectionState{}
 	if s.Any() || s.NeedsTimezone() || s.NeedsUsername() || s.NeedsSSHKey() {

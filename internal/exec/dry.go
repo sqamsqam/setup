@@ -9,25 +9,44 @@ import (
 
 type DryRunner struct {
 	Stdout io.Writer
+	Demo   bool
 }
 
 func NewDryRunner() *DryRunner {
 	return &DryRunner{Stdout: os.Stderr}
 }
 
+func NewDemoRunner() *DryRunner {
+	return &DryRunner{Stdout: os.Stderr, Demo: true}
+}
+
 func (d *DryRunner) IsDryRun() bool { return true }
 
+func (d *DryRunner) IsDemo() bool { return d.Demo }
+
 func (d *DryRunner) log(cmd string) {
+	if d.Demo {
+		_, _ = fmt.Fprintln(d.Stdout, cmd)
+		return
+	}
 	_, _ = fmt.Fprintf(d.Stdout, "[DRY-RUN] %s\n", cmd)
 }
 
+func (d *DryRunner) logCommand(cmd string) {
+	if d.Demo {
+		_, _ = fmt.Fprintf(d.Stdout, "$ %s\n", cmd)
+		return
+	}
+	d.log(cmd)
+}
+
 func (d *DryRunner) Run(name string, args ...string) error {
-	d.log(name + " " + strings.Join(args, " "))
+	d.logCommand(name + " " + strings.Join(args, " "))
 	return nil
 }
 
 func (d *DryRunner) Output(name string, args ...string) (string, error) {
-	d.log(name + " " + strings.Join(args, " "))
+	d.logCommand(name + " " + strings.Join(args, " "))
 
 	switch name {
 	case "dpkg":
@@ -102,12 +121,12 @@ func (d *DryRunner) Output(name string, args ...string) (string, error) {
 
 func (d *DryRunner) RunAsUser(user, name string, args ...string) error {
 	allArgs := append([]string{"sudo", "-iu", user, "--", name}, args...)
-	d.log(strings.Join(allArgs, " "))
+	d.logCommand(strings.Join(allArgs, " "))
 	return nil
 }
 
 func (d *DryRunner) Shell(script string) error {
-	d.log("bash -c '" + script + "'")
+	d.logCommand("bash -c '" + script + "'")
 	return nil
 }
 
@@ -122,6 +141,11 @@ func (d *DryRunner) ReadFile(path string) ([]byte, error) {
 }
 
 func (d *DryRunner) CreateTemp(dir, pattern string) (string, error) {
+	if d.Demo {
+		path := strings.TrimRight(dir, "/") + "/" + strings.ReplaceAll(pattern, "*", "000000")
+		d.log("CreateTemp(" + dir + ", " + pattern + ") -> " + path)
+		return path, nil
+	}
 	path := strings.TrimRight(dir, "/") + "/.setup-dry-run-" + strings.Trim(pattern, "*")
 	d.log("CreateTemp(" + dir + ", " + pattern + ") -> " + path)
 	return path, nil

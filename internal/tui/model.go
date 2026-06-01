@@ -233,14 +233,20 @@ type model struct {
 
 	width, height int
 	dryRun        bool
+	demo          bool
 	quitting      bool
 }
 
 func InitialModel(dryRun bool) model {
+	return InitialModelWithMode(dryRun, false)
+}
+
+func InitialModelWithMode(dryRun, demo bool) model {
 	m := model{
 		screen:       screenMainMenu,
 		selections:   defaultSelections(),
 		dryRun:       dryRun,
+		demo:         demo,
 		help:         help.New(),
 		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
 		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color("#2E7D6B"))),
@@ -479,7 +485,7 @@ func (m model) outputSize() (int, int) {
 		if outputWidth < 32 {
 			outputWidth = 32
 		}
-		outputHeight := m.height - 9
+		outputHeight := m.height - 22
 		if outputHeight < 6 {
 			outputHeight = 6
 		}
@@ -491,7 +497,7 @@ func (m model) outputSize() (int, int) {
 		outputWidth = 32
 	}
 	_, stepsHeight := m.stepsSize()
-	outputHeight := m.height - stepsHeight - 13
+	outputHeight := m.height - stepsHeight - 26
 	if outputHeight < 6 {
 		outputHeight = 6
 	}

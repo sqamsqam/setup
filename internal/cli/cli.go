@@ -34,9 +34,10 @@ func Version() string {
 }
 
 func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
-	if runnerFactory == nil {
-		runnerFactory = defaultRunner
-	}
+	return BuildAppWithMode(dryRun, false, runnerFactory)
+}
+
+func BuildAppWithMode(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "setup",
 		Usage:   "Provisioning helper for fresh Ubuntu 26.04 LXC containers",
@@ -47,33 +48,58 @@ func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Usage: "Print actions without changing the system",
 				Value: dryRun,
 			},
+			&cli.BoolFlag{
+				Name:  "demo",
+				Usage: "Preview actions without changing the system or showing dry-run labels",
+				Value: demo,
+			},
 		},
 		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
 			// Prevent urfave/cli from calling os.Exit(1) internally.
 			// Error is printed by the caller (main.go).
 		},
 		Commands: []*cli.Command{
-			bootstrapCmd(dryRun, runnerFactory),
-			addUserCmd(dryRun, runnerFactory),
-			installToolsCmd(dryRun, runnerFactory),
-			devToolsCmd(dryRun, runnerFactory),
-			doctorCmd(dryRun, runnerFactory),
-			firewallCmd(dryRun, runnerFactory),
-			fail2banCmd(dryRun, runnerFactory),
-			dockerCmd(dryRun, runnerFactory),
-			updatesCmd(dryRun, runnerFactory),
-			serviceCmd(dryRun, runnerFactory),
-			fullCmd(dryRun, runnerFactory),
+			bootstrapCmd(dryRun, demo, runnerFactory),
+			addUserCmd(dryRun, demo, runnerFactory),
+			installToolsCmd(dryRun, demo, runnerFactory),
+			devToolsCmd(dryRun, demo, runnerFactory),
+			doctorCmd(dryRun, demo, runnerFactory),
+			firewallCmd(dryRun, demo, runnerFactory),
+			fail2banCmd(dryRun, demo, runnerFactory),
+			dockerCmd(dryRun, demo, runnerFactory),
+			updatesCmd(dryRun, demo, runnerFactory),
+			serviceCmd(dryRun, demo, runnerFactory),
+			fullCmd(dryRun, demo, runnerFactory),
 			versionCmd(),
 		},
 	}
 }
 
 func commandDryRun(cmd *cli.Command, fallback bool) bool {
-	return fallback || cmd.Root().Bool("dry-run")
+	return fallback || cmd.Root().Bool("dry-run") || cmd.Root().Bool("demo")
+}
+
+func commandDemo(cmd *cli.Command, fallback bool) bool {
+	return fallback || cmd.Root().Bool("demo")
+}
+
+func commandRunner(cmd *cli.Command, dryRun, demo bool, runnerFactory RunnerFactory) setupexec.CmdRunner {
+	effectiveDryRun := commandDryRun(cmd, dryRun)
+	effectiveDemo := commandDemo(cmd, demo)
+	if runnerFactory != nil {
+		return runnerFactory(effectiveDryRun)
+	}
+	return defaultRunnerForMode(effectiveDryRun, effectiveDemo)
 }
 
 func defaultRunner(dryRun bool) setupexec.CmdRunner {
+	return defaultRunnerForMode(dryRun, false)
+}
+
+func defaultRunnerForMode(dryRun, demo bool) setupexec.CmdRunner {
+	if demo {
+		return setupexec.NewDemoRunner()
+	}
 	if dryRun {
 		return setupexec.NewDryRunner()
 	}
@@ -84,7 +110,7 @@ func defaultRunner(dryRun bool) setupexec.CmdRunner {
 
 func provisioningAction(action cli.ActionFunc) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
-		if !isRoot() {
+		if !cmd.Root().Bool("demo") && !isRoot() {
 			fmt.Fprintln(os.Stderr, "WARNING: not running as root — provisioning may fail")
 		}
 		return action(ctx, cmd)
@@ -95,7 +121,7 @@ func isRoot() bool {
 	return os.Geteuid() == 0
 }
 
-func bootstrapCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func bootstrapCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "bootstrap",
 		Aliases: []string{"b"},
@@ -109,12 +135,12 @@ func bootstrapCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			},
 		},
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-			return system.Bootstrap(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("timezone"))
+			return system.Bootstrap(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("timezone"))
 		}),
 	}
 }
 
-func addUserCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func addUserCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "add-user",
 		Aliases: []string{"a"},
@@ -152,23 +178,23 @@ func addUserCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			if pubkey == "" {
 				return fmt.Errorf("either --key or --key-file is required")
 			}
-			return user.AddUser(runnerFactory(commandDryRun(cmd, dryRun)), username, pubkey)
+			return user.AddUser(commandRunner(cmd, dryRun, demo, runnerFactory), username, pubkey)
 		}),
 	}
 }
 
-func installToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func installToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "install-tools",
 		Aliases: []string{"i"},
 		Usage:   "Install ripgrep, fd, bat, yq, glow, gh",
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-			return tools.InstallAll(runnerFactory(commandDryRun(cmd, dryRun)))
+			return tools.InstallAll(commandRunner(cmd, dryRun, demo, runnerFactory))
 		}),
 	}
 }
 
-func devToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func devToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "devtools",
 		Aliases: []string{"d"},
@@ -229,24 +255,24 @@ func devToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			} else if !opts.Any() {
 				opts = devtools.DefaultInstallOptions()
 			}
-			return devtools.InstallSelected(runnerFactory(commandDryRun(cmd, dryRun)), username, opts)
+			return devtools.InstallSelected(commandRunner(cmd, dryRun, demo, runnerFactory), username, opts)
 		}),
 	}
 }
 
-func doctorCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func doctorCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "doctor",
 		Usage: "Run read-only instance diagnostics",
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-			report := diagnostics.Run(runnerFactory(commandDryRun(cmd, dryRun)))
+			report := diagnostics.Run(commandRunner(cmd, dryRun, demo, runnerFactory))
 			fmt.Println(diagnostics.Format(report))
 			return nil
 		}),
 	}
 }
 
-func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "firewall",
 		Usage: "Manage UFW firewall rules",
@@ -255,7 +281,7 @@ func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "status",
 				Usage: "Show UFW status",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := firewall.Status(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := firewall.Status(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -267,7 +293,7 @@ func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "numbered",
 				Usage: "Show numbered UFW rules",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := firewall.StatusNumbered(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := firewall.StatusNumbered(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -282,7 +308,7 @@ func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.BoolFlag{Name: "allow-ssh", Usage: "Allow the detected SSH port before enabling", Value: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return firewall.EnableBaseline(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Bool("allow-ssh"))
+					return firewall.EnableBaseline(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Bool("allow-ssh"))
 				}),
 			},
 			{
@@ -295,7 +321,7 @@ func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "comment", Usage: "Optional UFW rule comment"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return firewall.AllowRule(runnerFactory(commandDryRun(cmd, dryRun)), firewall.Rule{
+					return firewall.AllowRule(commandRunner(cmd, dryRun, demo, runnerFactory), firewall.Rule{
 						Port:    cmd.String("port"),
 						Proto:   cmd.String("proto"),
 						From:    cmd.String("from"),
@@ -310,21 +336,21 @@ func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.IntFlag{Name: "number", Usage: "Rule number from firewall numbered", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return firewall.DeleteRule(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Int("number"))
+					return firewall.DeleteRule(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Int("number"))
 				}),
 			},
 			{
 				Name:  "reset",
 				Usage: "Reset UFW rules",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return firewall.Reset(runnerFactory(commandDryRun(cmd, dryRun)))
+					return firewall.Reset(commandRunner(cmd, dryRun, demo, runnerFactory))
 				}),
 			},
 		},
 	}
 }
 
-func fail2banCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func fail2banCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "fail2ban",
 		Usage: "Manage fail2ban SSH protection",
@@ -338,7 +364,7 @@ func fail2banCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.IntFlag{Name: "maxretry", Value: 5, Usage: "Maximum retries before ban"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return security.InstallFail2Ban(runnerFactory(commandDryRun(cmd, dryRun)), security.Fail2BanOptions{
+					return security.InstallFail2Ban(commandRunner(cmd, dryRun, demo, runnerFactory), security.Fail2BanOptions{
 						BanTime:  cmd.String("bantime"),
 						FindTime: cmd.String("findtime"),
 						MaxRetry: cmd.Int("maxretry"),
@@ -349,7 +375,7 @@ func fail2banCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "status",
 				Usage: "Show fail2ban SSH jail status",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := security.Fail2BanStatus(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := security.Fail2BanStatus(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -364,14 +390,14 @@ func fail2banCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "ip", Usage: "IP address to unban", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return security.UnbanIP(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("ip"))
+					return security.UnbanIP(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("ip"))
 				}),
 			},
 		},
 	}
 }
 
-func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func dockerCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "docker",
 		Usage: "Manage Docker maintenance tasks",
@@ -384,7 +410,7 @@ func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "max-file", Value: "3", Usage: "Maximum rotated log files"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return dockermaint.ConfigureLogRotation(runnerFactory(commandDryRun(cmd, dryRun)), dockermaint.LogRotationOptions{
+					return dockermaint.ConfigureLogRotation(commandRunner(cmd, dryRun, demo, runnerFactory), dockermaint.LogRotationOptions{
 						MaxSize: cmd.String("max-size"),
 						MaxFile: cmd.String("max-file"),
 					})
@@ -394,7 +420,7 @@ func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "disk",
 				Usage: "Show Docker disk usage",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := dockermaint.DiskUsage(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := dockermaint.DiskUsage(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -411,7 +437,7 @@ func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.BoolFlag{Name: "build-cache", Usage: "Prune build cache"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return dockermaint.Prune(runnerFactory(commandDryRun(cmd, dryRun)), dockermaint.PruneOptions{
+					return dockermaint.Prune(commandRunner(cmd, dryRun, demo, runnerFactory), dockermaint.PruneOptions{
 						Containers: cmd.Bool("containers"),
 						Images:     cmd.Bool("images"),
 						BuildCache: cmd.Bool("build-cache"),
@@ -422,7 +448,7 @@ func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 	}
 }
 
-func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func updatesCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "updates",
 		Usage: "Manage package updates and reboot checks",
@@ -431,7 +457,7 @@ func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "check",
 				Usage: "Update apt metadata and list upgradable packages",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := updates.Check(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := updates.Check(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -443,14 +469,14 @@ func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "upgrade",
 				Usage: "Run apt full-upgrade",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return updates.Upgrade(runnerFactory(commandDryRun(cmd, dryRun)))
+					return updates.Upgrade(commandRunner(cmd, dryRun, demo, runnerFactory))
 				}),
 			},
 			{
 				Name:  "reboot-required",
 				Usage: "Show whether a reboot is required",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := updates.RebootRequired(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := updates.RebootRequired(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -462,7 +488,7 @@ func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "unattended-status",
 				Usage: "Show unattended-upgrades service status",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := updates.UnattendedStatus(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := updates.UnattendedStatus(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -474,7 +500,7 @@ func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "failed-units",
 				Usage: "Show failed systemd units",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := updates.FailedUnits(runnerFactory(commandDryRun(cmd, dryRun)))
+					out, err := updates.FailedUnits(commandRunner(cmd, dryRun, demo, runnerFactory))
 					if err != nil {
 						return err
 					}
@@ -489,14 +515,14 @@ func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.BoolFlag{Name: "yes", Usage: "Confirm reboot"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return updates.Reboot(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Bool("yes"))
+					return updates.Reboot(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Bool("yes"))
 				}),
 			},
 		},
 	}
 }
 
-func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "service",
 		Usage: "Manage setup-created per-user systemd services",
@@ -512,7 +538,7 @@ func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "env-file", Usage: "Optional absolute EnvironmentFile path"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return service.Create(runnerFactory(commandDryRun(cmd, dryRun)), service.Config{
+					return service.Create(commandRunner(cmd, dryRun, demo, runnerFactory), service.Config{
 						User:    cmd.String("user"),
 						Name:    cmd.String("name"),
 						WorkDir: cmd.String("workdir"),
@@ -529,7 +555,7 @@ func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := service.Status(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+					out, err := service.Status(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
 					if err != nil {
 						return err
 					}
@@ -545,7 +571,7 @@ func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					out, err := service.Logs(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+					out, err := service.Logs(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
 					if err != nil {
 						return err
 					}
@@ -561,14 +587,14 @@ func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return service.Restart(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+					return service.Restart(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
 				}),
 			},
 		},
 	}
 }
 
-func fullCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "full",
 		Aliases: []string{"f"},
@@ -613,7 +639,7 @@ func fullCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				return fmt.Errorf("either --key or --key-file is required")
 			}
 			tz := cmd.String("timezone")
-			runner := runnerFactory(commandDryRun(cmd, dryRun))
+			runner := commandRunner(cmd, dryRun, demo, runnerFactory)
 
 			setupexec.PrintStep("=== Full provisioning started ===")
 			if err := system.Bootstrap(runner, tz); err != nil {

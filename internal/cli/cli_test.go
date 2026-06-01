@@ -99,6 +99,19 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(buf.String(), "dry-run") {
 		t.Errorf("expected global dry-run flag in help, got: %s", buf.String())
 	}
+	if !strings.Contains(buf.String(), "demo") {
+		t.Errorf("expected global demo flag in help, got: %s", buf.String())
+	}
+}
+
+func TestDefaultRunnerForDemoMode(t *testing.T) {
+	runner := defaultRunnerForMode(true, true)
+	if !setupexec.IsDryRun(runner) {
+		t.Fatal("expected demo runner to be dry-run safe")
+	}
+	if !setupexec.IsDemo(runner) {
+		t.Fatal("expected demo runner")
+	}
 }
 
 func TestRunBootstrap(t *testing.T) {

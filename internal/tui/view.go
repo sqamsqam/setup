@@ -61,11 +61,11 @@ func (m model) mainMenuView() string {
 	s.WriteString(subtitleStyle.Render("Choose bootstrap, management, CLI, and toolchain actions."))
 	s.WriteString("\n\n")
 
-	if os.Geteuid() != 0 {
+	if !m.dryRun && !m.demo && os.Geteuid() != 0 {
 		s.WriteString(errorStyle.Render("WARNING: not running as root. Provisioning may fail."))
 		s.WriteString("\n")
 	}
-	if m.dryRun {
+	if m.dryRun && !m.demo {
 		s.WriteString(warnStyle.Render("DRY RUN: commands will be logged without changing the system."))
 		s.WriteString("\n")
 	}
@@ -73,7 +73,7 @@ func (m model) mainMenuView() string {
 		s.WriteString(errorStyle.Render(m.planErr))
 		s.WriteString("\n")
 	}
-	if os.Geteuid() != 0 || m.dryRun || m.planErr != "" {
+	if (!m.dryRun && !m.demo && os.Geteuid() != 0) || (m.dryRun && !m.demo) || m.planErr != "" {
 		s.WriteString("\n")
 	}
 
@@ -194,7 +194,7 @@ func (m model) confirmBody() string {
 	if m.selections.DockerLogRotation {
 		body.WriteString("  Docker daemon log rotation will be merged into daemon.json and Docker restarted only if changed.\n")
 	}
-	if m.dryRun {
+	if m.dryRun && !m.demo {
 		body.WriteString("\n")
 		body.WriteString(warnStyle.Render("DRY RUN: no changes will be made."))
 		body.WriteString("\n")
@@ -253,12 +253,10 @@ func (m model) runBodyView() string {
 		steps := runPanelStyle.
 			Width(m.stepPanelWidth()).
 			Height(m.output.Height()).
-			MaxHeight(m.output.Height()).
 			Render(m.steps.View())
 		log := runPanelStyle.
 			Width(m.output.Width() + 2).
 			Height(m.output.Height()).
-			MaxHeight(m.output.Height()).
 			Render(m.logPanelView())
 		return lipgloss.JoinHorizontal(lipgloss.Top, steps, "  ", log)
 	}
@@ -267,13 +265,11 @@ func (m model) runBodyView() string {
 	s.WriteString(runPanelStyle.
 		Width(m.steps.Width() + 2).
 		Height(m.steps.Height()).
-		MaxHeight(m.steps.Height()).
 		Render(m.steps.View()))
 	s.WriteString("\n")
 	s.WriteString(runPanelStyle.
 		Width(m.output.Width() + 2).
 		Height(m.output.Height()).
-		MaxHeight(m.output.Height()).
 		Render(m.logPanelView()))
 	return s.String()
 }

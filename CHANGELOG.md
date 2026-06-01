@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-01
+
+### Added
+- VHS-based visual review workflow with deterministic demo-mode tapes, generated screenshots, supporting GIFs, and a golden demo GIF.
+- Demo mode (`--demo`) for non-mutating public demos without dry-run banners or `[DRY-RUN]` log prefixes.
+- `make bake` alias for regenerating the happy-path golden demo animation.
+
+### Changed
+- TUI dry-run mode no longer shows a root warning, and running/done panels reserve enough space for their borders and help text.
+- VHS visual tapes now use demo mode while preserving dry-run safety.
+
 ## [0.6.0] - 2026-06-01
 
 ### Added
@@ -161,6 +172,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.7.0]: https://github.com/sqamsqam/setup/releases/tag/v0.7.0
 [0.6.0]: https://github.com/sqamsqam/setup/releases/tag/v0.6.0
 [0.5.4]: https://github.com/sqamsqam/setup/releases/tag/v0.5.4
 [0.5.3]: https://github.com/sqamsqam/setup/releases/tag/v0.5.3

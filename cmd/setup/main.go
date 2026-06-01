@@ -21,6 +21,7 @@ func main() {
 	args := os.Args[1:]
 
 	dryRun := false
+	demo := false
 	cleanArgs := make([]string, 0, len(args))
 	for _, a := range args {
 		switch a {
@@ -28,20 +29,24 @@ func main() {
 			dryRun = true
 		case "--dry-run=false":
 			dryRun = false
+		case "--demo", "--demo=true":
+			demo = true
+		case "--demo=false":
+			demo = false
 		default:
 			cleanArgs = append(cleanArgs, a)
 		}
 	}
 
 	if isTUI(cleanArgs) {
-		if !isRoot() {
+		if !dryRun && !demo && !isRoot() {
 			_, _ = os.Stderr.WriteString("WARNING: not running as root — provisioning may fail\n")
 		}
-		tui.Run(dryRun)
+		tui.RunWithMode(dryRun, demo)
 		return
 	}
 
-	app := cli.BuildApp(dryRun, nil)
+	app := cli.BuildAppWithMode(dryRun, demo, nil)
 	if err := app.Run(context.Background(), append([]string{os.Args[0]}, cleanArgs...)); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)

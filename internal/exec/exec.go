@@ -24,9 +24,20 @@ type dryRunner interface {
 	IsDryRun() bool
 }
 
+type demoRunner interface {
+	IsDemo() bool
+}
+
 func IsDryRun(r CmdRunner) bool {
 	if d, ok := r.(dryRunner); ok {
 		return d.IsDryRun()
+	}
+	return false
+}
+
+func IsDemo(r CmdRunner) bool {
+	if d, ok := r.(demoRunner); ok {
+		return d.IsDemo()
 	}
 	return false
 }

@@ -10,8 +10,12 @@ import (
 )
 
 func Run(dryRun bool) {
+	RunWithMode(dryRun, false)
+}
+
+func RunWithMode(dryRun, demo bool) {
 	setupexec.SetPrintWriter(io.Discard)
-	m := InitialModel(dryRun)
+	m := InitialModelWithMode(dryRun, demo)
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {

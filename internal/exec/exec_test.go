@@ -70,6 +70,28 @@ func TestDryRunnerIsDryRun(t *testing.T) {
 	}
 }
 
+func TestDemoRunnerIsDryRunWithoutDryRunLabel(t *testing.T) {
+	var buf bytes.Buffer
+	runner := NewDemoRunner()
+	runner.Stdout = &buf
+
+	if !runner.IsDryRun() {
+		t.Error("expected demo runner to be a dry runner")
+	}
+	if !runner.IsDemo() {
+		t.Error("expected demo runner to report demo mode")
+	}
+	if err := runner.Run("apt", "update"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(buf.String(), "DRY-RUN") || strings.Contains(buf.String(), "dry-run") {
+		t.Fatalf("demo output should not mention dry-run, got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "apt update") {
+		t.Fatalf("expected command in demo output, got %q", buf.String())
+	}
+}
+
 func TestDryRunnerOutput(t *testing.T) {
 	var buf bytes.Buffer
 	runner := &DryRunner{Stdout: &buf}
