@@ -213,18 +213,24 @@ func TestInstallAptKeyVerifiesTempBeforeFinalRename(t *testing.T) {
 		name        string
 		install     func(setupexec.CmdRunner) error
 		finalPath   string
+		sourcePath  string
+		sourceWants []string
 		fingerprint string
 	}{
 		{
 			name:        "glow",
 			install:     installGlow,
 			finalPath:   "/etc/apt/keyrings/charm.gpg",
+			sourcePath:  "/etc/apt/sources.list.d/charm.list",
+			sourceWants: []string{"deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *"},
 			fingerprint: "F506F2D602D1C400A1E45D967E2E87C71D5E9D67",
 		},
 		{
 			name:        "gh",
 			install:     installGh,
 			finalPath:   "/etc/apt/keyrings/githubcli-archive-keyring.gpg",
+			sourcePath:  "/etc/apt/sources.list.d/github-cli.list",
+			sourceWants: []string{"deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"},
 			fingerprint: "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
 		},
 	}
@@ -251,6 +257,64 @@ func TestInstallAptKeyVerifiesTempBeforeFinalRename(t *testing.T) {
 			if verifyAt >= chmodAt || chmodAt >= renameAt {
 				t.Fatalf("want verify before chmod before rename, got operations: %v", runner.ops)
 			}
+
+			source := string(runner.files[tt.sourcePath])
+			for _, want := range tt.sourceWants {
+				if !strings.Contains(source, want) {
+					t.Fatalf("%s source missing %q:\n%s", tt.name, want, source)
+				}
+			}
+		})
+	}
+}
+
+func TestVerifyAptGPGFingerprint(t *testing.T) {
+	tests := []struct {
+		name        string
+		fingerprint string
+		outputErr   error
+		expected    string
+		wantErr     bool
+	}{
+		{
+			name:        "match",
+			fingerprint: "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			expected:    "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+		},
+		{
+			name:        "match with spaces",
+			fingerprint: "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			expected:    "23F3 D1D8 6577 3DE1 7D9D  8C30 A7B6 3A2B 8F85 411F",
+		},
+		{
+			name:        "mismatch",
+			fingerprint: "BADFINGERPRINT",
+			expected:    "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			wantErr:     true,
+		},
+		{
+			name:     "missing fingerprint",
+			expected: "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			wantErr:  true,
+		},
+		{
+			name:        "gpg error",
+			fingerprint: "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			outputErr:   errors.New("gpg failed"),
+			expected:    "23F3D1D865773DE17D9D8C30A7B63A2B8F85411F",
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := newAptKeyTestRunner()
+			runner.fingerprint = tt.fingerprint
+			runner.gpgErr = tt.outputErr
+			err := verifyGPGFingerprint(runner, "/tmp/key", tt.expected)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("verifyGPGFingerprint error = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
@@ -260,6 +324,7 @@ type aptKeyTestRunner struct {
 	ops             []string
 	tempN           int
 	fingerprint     string
+	gpgErr          error
 	verifiedKeyring string
 }
 
@@ -284,6 +349,9 @@ func (r *aptKeyTestRunner) Output(name string, args ...string) (string, error) {
 	r.ops = append(r.ops, "output:"+name+" "+strings.Join(args, " "))
 	switch name {
 	case "gpg":
+		if r.gpgErr != nil {
+			return "", r.gpgErr
+		}
 		if len(args) == 0 {
 			return "", errors.New("missing gpg args")
 		}
@@ -291,7 +359,7 @@ func (r *aptKeyTestRunner) Output(name string, args ...string) (string, error) {
 		r.verifiedKeyring = keyringPath
 		return strings.Join([]string{"fpr", "", "", "", "", "", "", "", "", r.fingerprint, ""}, ":"), nil
 	case "dpkg":
-		return "amd64", nil
+		return "amd64\n", nil
 	default:
 		return "", nil
 	}

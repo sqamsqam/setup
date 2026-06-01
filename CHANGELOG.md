@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+- Dry-run and demo Ubuntu codename simulation now matches Ubuntu 26.04 `resolute`.
+
+### Fixed
+- GitHub CLI apt source generation now trims the detected architecture before writing the source list.
+
+### Tests
+- Added apt key and source coverage for Docker, Glow, and GitHub CLI installers.
+- Added coverage for managed file writes and update-management helpers.
+
 ## [0.8.0] - 2026-06-01
 
 ### Added

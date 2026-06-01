@@ -67,7 +67,7 @@ func (d *DryRunner) Output(name string, args ...string) (string, error) {
 		return "user", nil
 	case "bash":
 		if len(args) >= 2 && strings.Contains(args[1], "VERSION_CODENAME") {
-			return "plucky", nil
+			return "resolute", nil
 		}
 		if len(args) >= 2 && strings.Contains(args[1], "PRETTY_NAME") {
 			return "Ubuntu 26.04 LTS", nil

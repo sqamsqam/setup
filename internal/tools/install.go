@@ -425,7 +425,7 @@ func installGh(runner setupexec.CmdRunner) error {
 		return err
 	}
 
-	listContent := fmt.Sprintf("deb [arch=%s signed-by=%s] https://cli.github.com/packages stable main\n", arch, keyringPath)
+	listContent := fmt.Sprintf("deb [arch=%s signed-by=%s] https://cli.github.com/packages stable main\n", strings.TrimSpace(arch), keyringPath)
 	tmpList, err := runner.CreateTemp(filepath.Dir(listPath), ".setup-github-cli-list-*")
 	if err != nil {
 		return fmt.Errorf("create temp github-cli.list: %w", err)
