@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/sqamsqam/setup/internal/tools"
 )
 
 func TestInitialModel(t *testing.T) {
@@ -13,23 +15,17 @@ func TestInitialModel(t *testing.T) {
 	if m.dryRun {
 		t.Error("expected dryRun to be false")
 	}
-	if m.timezone != "UTC" {
-		t.Errorf("expected default timezone UTC, got: %s", m.timezone)
+	if m.timezoneInput.Value() != "UTC" {
+		t.Errorf("expected default timezone UTC, got: %s", m.timezoneInput.Value())
 	}
 	if m.screen != screenMainMenu {
 		t.Errorf("expected screenMainMenu, got: %d", m.screen)
 	}
-	if m.chainIdx != -1 {
-		t.Errorf("expected chainIdx -1, got: %d", m.chainIdx)
+	if !m.selections.Bootstrap || !m.selections.AddUser || !m.selections.Tools.Any() || !m.selections.DevTools.Any() {
+		t.Fatalf("expected full default selection: %#v", m.selections)
 	}
-	if len(m.menuItems) != 5 {
-		t.Errorf("expected 5 menu items, got: %d", len(m.menuItems))
-	}
-	if m.menuItems[0].label != "Full Setup" {
-		t.Errorf("expected first menu item 'Full Setup', got: %q", m.menuItems[0].label)
-	}
-	if m.menuItems[0].action != actionFullSetup {
-		t.Errorf("expected first menu item action actionFullSetup, got: %d", m.menuItems[0].action)
+	if len(m.planItems()) != 12 {
+		t.Errorf("expected 12 plan items, got: %d", len(m.planItems()))
 	}
 }
 
@@ -40,243 +36,258 @@ func TestInitialModelDryRun(t *testing.T) {
 	}
 }
 
-func TestEffectiveActionStandalone(t *testing.T) {
+func TestSelectionRequirements(t *testing.T) {
+	s := selectionState{}
+	if s.Any() || s.NeedsTimezone() || s.NeedsUsername() || s.NeedsSSHKey() {
+		t.Fatalf("empty selection should not need inputs: %#v", s)
+	}
+
+	s.Bootstrap = true
+	if !s.NeedsTimezone() {
+		t.Fatal("bootstrap should require timezone")
+	}
+
+	s = selectionState{}
+	s.DevTools.Node = true
+	if !s.NeedsUsername() || s.NeedsSSHKey() {
+		t.Fatal("node should require username but not SSH key")
+	}
+
+	s = selectionState{AddUser: true}
+	if !s.NeedsUsername() || !s.NeedsSSHKey() {
+		t.Fatal("add user should require username and SSH key")
+	}
+}
+
+func TestToggleCLIAll(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionBootstrap
-	m.chainIdx = -1
 
-	got := m.effectiveAction()
-	if got != actionBootstrap {
-		t.Errorf("expected actionBootstrap, got %d", got)
+	m.togglePlanItem(itemCLIAll)
+	if m.selections.Tools.Any() {
+		t.Fatalf("expected CLI tools to be disabled: %#v", m.selections.Tools)
+	}
+
+	m.togglePlanItem(itemCLIAll)
+	if got := len(m.selections.Tools.SelectedTools()); got != 6 {
+		t.Fatalf("expected all CLI tools selected, got %d", got)
 	}
 }
 
-func TestEffectiveActionChain(t *testing.T) {
+func TestToggleIndividualTool(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionFullSetup
-	m.chainIdx = 1
+	m.selections.Tools = tools.InstallOptions{}
 
-	got := m.effectiveAction()
-	if got != actionAddUser {
-		t.Errorf("expected actionAddUser for chainIdx 1, got %d", got)
+	m.togglePlanItem(itemYq)
+	if !m.selections.Tools.Yq {
+		t.Fatal("expected yq to be selected")
 	}
-
-	m.chainIdx = 3
-	got = m.effectiveAction()
-	if got != actionInstallDevTools {
-		t.Errorf("expected actionInstallDevTools for chainIdx 3, got %d", got)
+	if got := len(m.selections.Tools.SelectedTools()); got != 1 {
+		t.Fatalf("expected one selected tool, got %d", got)
 	}
 }
 
-func TestIsChain(t *testing.T) {
+func TestStartInputFlowDefaultStartsWithTimezone(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionBootstrap
-	if m.isChain() {
-		t.Error("standalone action should not be a chain")
-	}
 
-	m.action = actionFullSetup
-	if !m.isChain() {
-		t.Error("actionFullSetup should be a chain")
+	updated, _ := m.startInputFlow()
+	got := updated.(model)
+	if got.screen != screenInputTimezone {
+		t.Fatalf("expected timezone screen, got %d", got.screen)
 	}
 }
 
-func TestActionFlowScreenCounts(t *testing.T) {
-	tests := []struct {
-		action   action
-		expected int
-	}{
-		{actionBootstrap, 2},       // timezone + confirm
-		{actionAddUser, 3},         // user + key + confirm
-		{actionInstallTools, 1},    // confirm only
-		{actionInstallDevTools, 2}, // user + confirm
-	}
-
-	for _, tt := range tests {
-		flow := actionFlow[tt.action]
-		if len(flow) != tt.expected {
-			t.Errorf("action %d expected %d screens, got %d", tt.action, tt.expected, len(flow))
-		}
-		// Last screen should always be confirm
-		if flow[len(flow)-1] != screenConfirm {
-			t.Errorf("action %d last screen should be confirm, got %d", tt.action, flow[len(flow)-1])
-		}
-	}
-}
-
-func TestGoNext(t *testing.T) {
+func TestStartInputFlowWithOnlyCLIShowsConfirm(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionAddUser
-	m.chainIdx = -1
-	m.flowPos = 0
-	m.screen = m.currentFlow()[0]
+	m.selections = selectionState{}
+	m.selections.Tools.Yq = true
 
-	if m.screen != screenInputUser {
-		t.Errorf("expected screenInputUser at flowPos 0, got %d", m.screen)
-	}
-
-	m.goNext()
-	if m.flowPos != 1 {
-		t.Errorf("expected flowPos 1 after goNext, got %d", m.flowPos)
-	}
-	if m.screen != screenInputKey {
-		t.Errorf("expected screenInputKey after goNext, got %d", m.screen)
-	}
-
-	m.goNext()
-	if m.flowPos != 2 {
-		t.Errorf("expected flowPos 2 after goNext, got %d", m.flowPos)
-	}
-	if m.screen != screenConfirm {
-		t.Errorf("expected screenConfirm after goNext, got %d", m.screen)
+	updated, _ := m.startInputFlow()
+	got := updated.(model)
+	if got.screen != screenConfirm {
+		t.Fatalf("expected confirm screen, got %d", got.screen)
 	}
 }
 
-func TestGoBack(t *testing.T) {
+func TestStartInputFlowRejectsEmptySelection(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionAddUser
-	m.chainIdx = -1
-	m.flowPos = 2
-	m.screen = screenConfirm
+	m.selections = selectionState{}
 
-	m.goBack()
-	if m.flowPos != 1 {
-		t.Errorf("expected flowPos 1 after goBack, got %d", m.flowPos)
+	updated, _ := m.startInputFlow()
+	got := updated.(model)
+	if got.screen != screenMainMenu {
+		t.Fatalf("expected menu screen, got %d", got.screen)
 	}
-	if m.screen != screenInputKey {
-		t.Errorf("expected screenInputKey after goBack, got %d", m.screen)
-	}
-
-	m.goBack()
-	if m.flowPos != 0 {
-		t.Errorf("expected flowPos 0 after goBack, got %d", m.flowPos)
-	}
-	if m.screen != screenInputUser {
-		t.Errorf("expected screenInputUser after goBack, got %d", m.screen)
-	}
-
-	// Going back from first screen returns to menu
-	m.goBack()
-	if m.screen != screenMainMenu {
-		t.Errorf("expected screenMainMenu after goBack from first screen, got %d", m.screen)
+	if got.planErr == "" {
+		t.Fatal("expected plan error")
 	}
 }
 
-func TestResetToMenu(t *testing.T) {
+func TestInputFlow(t *testing.T) {
+	m := InitialModel(false)
+	if got := len(m.inputFlow()); got != 3 {
+		t.Fatalf("expected timezone, username, key screens, got %d", got)
+	}
+
+	m.selections = selectionState{}
+	m.selections.DevTools.Node = true
+	flow := m.inputFlow()
+	if len(flow) != 1 || flow[0] != screenInputUser {
+		t.Fatalf("expected only username flow, got %#v", flow)
+	}
+}
+
+func TestBuildRunStepsDefault(t *testing.T) {
+	m := InitialModel(false)
+	steps := m.buildRunSteps()
+
+	if len(steps) != 11 {
+		t.Fatalf("expected 11 run steps, got %d", len(steps))
+	}
+	if steps[0].id != runBootstrap || steps[1].id != runAddUser || steps[2].id != runToolDeps {
+		t.Fatalf("unexpected leading steps: %#v", steps[:3])
+	}
+	if steps[len(steps)-2].id != runGo || steps[len(steps)-1].id != runNode {
+		t.Fatalf("expected Go and Node last, got %#v", steps[len(steps)-2:])
+	}
+}
+
+func TestBuildRunStepsYqOnly(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{}
+	m.selections.Tools.Yq = true
+
+	steps := m.buildRunSteps()
+	if len(steps) != 2 {
+		t.Fatalf("expected deps + yq, got %d steps", len(steps))
+	}
+	if steps[0].id != runToolDeps || steps[1].tool != tools.ToolYq {
+		t.Fatalf("unexpected steps: %#v", steps)
+	}
+}
+
+func TestBlankTimezoneDefaultsToUTC(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{Bootstrap: true}
+	m.screen = screenInputTimezone
+	m.timezoneInput.SetValue("")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.timezoneInput.Value() != "UTC" {
+		t.Fatalf("expected UTC, got %q", got.timezoneInput.Value())
+	}
+	if got.screen != screenConfirm {
+		t.Fatalf("expected confirm screen, got %d", got.screen)
+	}
+}
+
+func TestEmptyUsernameShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputUser
+	m.usernameInput.SetValue("")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected username error")
+	}
+	if got.screen != screenInputUser {
+		t.Fatalf("expected to stay on username screen, got %d", got.screen)
+	}
+}
+
+func TestInvalidSSHKeyShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputKey
+	m.sshKeyInput.SetValue("not-a-key")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected SSH key error")
+	}
+	if got.screen != screenInputKey {
+		t.Fatalf("expected to stay on SSH key screen, got %d", got.screen)
+	}
+}
+
+func TestNormalizeSSHKeyInput(t *testing.T) {
+	got := normalizeSSHKeyInput("ssh-ed25519   abc123\nuser@example\n")
+	if got != "ssh-ed25519 abc123 user@example" {
+		t.Fatalf("unexpected normalized key: %q", got)
+	}
+}
+
+func TestFailedStepRetriesInsteadOfResetting(t *testing.T) {
 	m := InitialModel(false)
 	m.screen = screenDone
-	m.action = actionAddUser
-	m.chainIdx = 0
-	m.username = "testuser"
-	m.sshKey = "ssh-ed25519 test"
-	m.timezone = "Europe/Paris"
-	m.steps = []step{{name: "test", status: stepOK}}
+	m.runningIndex = 0
+	m.runSteps = []runStep{{id: runBootstrap, name: "System Bootstrap", status: stepFail}}
 
-	m.resetToMenu()
-
-	if m.screen != screenMainMenu {
-		t.Errorf("expected screenMainMenu, got %d", m.screen)
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.runningIndex != 0 {
+		t.Fatalf("expected run index to stay at 0, got %d", got.runningIndex)
 	}
-	if m.menuCursor != 0 {
-		t.Errorf("expected menuCursor 0, got %d", m.menuCursor)
+	if got.screen != screenRunning {
+		t.Fatalf("expected retry to enter running screen, got %d", got.screen)
 	}
-	if m.username != "" {
-		t.Errorf("expected empty username, got %q", m.username)
-	}
-	if m.sshKey != "" {
-		t.Errorf("expected empty sshKey, got %q", m.sshKey)
-	}
-	if m.timezone != "UTC" {
-		t.Errorf("expected UTC timezone, got %q", m.timezone)
-	}
-	if m.chainIdx != -1 {
-		t.Errorf("expected chainIdx -1, got %d", m.chainIdx)
-	}
-	if m.steps != nil {
-		t.Errorf("expected nil steps, got %v", m.steps)
+	if got.runSteps[0].status != stepRunning {
+		t.Fatalf("expected failed step to be running, got %d", got.runSteps[0].status)
 	}
 }
 
-func TestBuildStepsChain(t *testing.T) {
+func TestHandleStepMsgAdvancesToNextStep(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionFullSetup
-	m.chainIdx = 0
-
-	m.buildSteps()
-
-	if len(m.steps) != 4 {
-		t.Errorf("expected 4 steps for full setup chain, got %d", len(m.steps))
-	}
-	if m.steps[0].status != stepPending {
-		t.Errorf("expected step 0 pending, got %d", m.steps[0].status)
-	}
-}
-
-func TestBuildStepsStandalone(t *testing.T) {
-	m := InitialModel(false)
-	m.action = actionBootstrap
-	m.chainIdx = -1
-
-	m.buildSteps()
-
-	if len(m.steps) != 1 {
-		t.Errorf("expected 1 step for standalone, got %d", len(m.steps))
-	}
-	if m.steps[0].status != stepPending {
-		t.Errorf("expected step 0 pending, got %d", m.steps[0].status)
-	}
-}
-
-func TestRunningStepIndex(t *testing.T) {
-	m := InitialModel(false)
-
-	m.action = actionBootstrap
-	m.chainIdx = -1
-	if m.runningStepIndex() != 0 {
-		t.Errorf("standalone should return 0, got %d", m.runningStepIndex())
+	m.screen = screenRunning
+	m.runningIndex = 0
+	m.runSteps = []runStep{
+		{id: runBootstrap, name: "System Bootstrap", status: stepRunning},
+		{id: runGo, name: "Install Go", status: stepPending},
 	}
 
-	m.action = actionFullSetup
-	m.chainIdx = 2
-	if m.runningStepIndex() != 2 {
-		t.Errorf("chainIdx 2 should return 2, got %d", m.runningStepIndex())
+	updated, _ := m.handleStepMsg(stepStatusMsg{index: 0, status: stepOK, output: "done"})
+	got := updated.(model)
+	if got.runSteps[0].status != stepOK {
+		t.Fatalf("expected first step OK, got %d", got.runSteps[0].status)
+	}
+	if got.runningIndex != 1 || got.runSteps[1].status != stepRunning {
+		t.Fatalf("expected second step running, got index=%d status=%d", got.runningIndex, got.runSteps[1].status)
+	}
+	if got.screen != screenRunning {
+		t.Fatalf("expected running screen, got %d", got.screen)
 	}
 }
 
 func TestChainProgress(t *testing.T) {
 	m := InitialModel(false)
-	m.action = actionFullSetup
-	m.chainIdx = 0
-	m.buildSteps()
-
-	if m.chainProgress() != 0 {
-		t.Errorf("expected 0%% progress, got %d", m.chainProgress())
+	m.runSteps = []runStep{
+		{status: stepOK},
+		{status: stepPending},
+		{status: stepPending},
+		{status: stepOK},
 	}
-
-	m.steps[0].status = stepOK
-	if m.chainProgress() != 25 {
-		t.Errorf("expected 25%% progress, got %d", m.chainProgress())
-	}
-
-	m.steps[1].status = stepOK
-	m.steps[2].status = stepOK
-	if m.chainProgress() != 75 {
-		t.Errorf("expected 75%% progress, got %d", m.chainProgress())
-	}
-
-	m.steps[3].status = stepOK
-	if m.chainProgress() != 100 {
-		t.Errorf("expected 100%% progress, got %d", m.chainProgress())
+	if got := m.runProgress(); got != 0.5 {
+		t.Fatalf("expected 50%% progress, got %f", got)
 	}
 }
 
-func TestChainProgressStandalone(t *testing.T) {
-	m := InitialModel(false)
-	m.action = actionBootstrap
-	m.chainIdx = -1
+func TestStatusIcon(t *testing.T) {
+	tests := []struct {
+		status stepStatus
+		want   string
+	}{
+		{stepPending, "[ ]"},
+		{stepRunning, "[*]"},
+		{stepOK, "[✓]"},
+		{stepFail, "[✗]"},
+	}
 
-	if m.chainProgress() != 0 {
-		t.Errorf("standalone should have 0 progress, got %d", m.chainProgress())
+	for _, tt := range tests {
+		got := statusIcon(tt.status)
+		if got != tt.want {
+			t.Errorf("statusIcon(%v) = %q, want %q", tt.status, got, tt.want)
+		}
 	}
 }
 
@@ -296,138 +307,11 @@ func TestTruncateKey(t *testing.T) {
 	}
 }
 
-func TestTruncateKeyTrimmed(t *testing.T) {
-	withSpace := "  key-content  "
-	got := truncateKey(withSpace, 40)
-	if got != "key-content" {
-		t.Errorf("expected trimmed key, got: %q", got)
+func TestDrawOutputHelpers(t *testing.T) {
+	if got := truncateOutput("abc", 10); got != "abc" {
+		t.Fatalf("unexpected truncateOutput result: %q", got)
 	}
-}
-
-func TestStatusIcon(t *testing.T) {
-	tests := []struct {
-		status stepStatus
-		want   string
-	}{
-		{stepPending, "  "},
-		{stepRunning, "[*]"},
-		{stepOK, "[✓]"},
-		{stepFail, "[✗]"},
-	}
-
-	for _, tt := range tests {
-		got := statusIcon(tt.status)
-		if got != tt.want {
-			t.Errorf("statusIcon(%v) = %q, want %q", tt.status, got, tt.want)
-		}
-	}
-}
-
-func TestPasteSSHKey(t *testing.T) {
-	m := InitialModel(false)
-	m.screen = screenInputKey
-	msg := tea.PasteMsg{Content: "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo= pasted@example\n"}
-
-	updated, _ := m.Update(msg)
-	got := updated.(model)
-	if got.sshKey != "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo= pasted@example" {
-		t.Fatalf("unexpected pasted key: %q", got.sshKey)
-	}
-}
-
-func TestEmptyUsernameShowsError(t *testing.T) {
-	m := InitialModel(false)
-	m.screen = screenInputUser
-
-	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	got := updated.(model)
-	if got.usernameErr == "" {
-		t.Fatal("expected username error")
-	}
-	if got.screen != screenInputUser {
-		t.Fatalf("expected to stay on username screen, got %d", got.screen)
-	}
-}
-
-func TestBlankTimezoneDefaultsToUTC(t *testing.T) {
-	m := InitialModel(false)
-	m.action = actionBootstrap
-	m.screen = screenInputTimezone
-	m.timezone = ""
-
-	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	got := updated.(model)
-	if got.timezone != "UTC" {
-		t.Fatalf("expected UTC, got %q", got.timezone)
-	}
-	if got.screen != screenConfirm {
-		t.Fatalf("expected confirm screen, got %d", got.screen)
-	}
-}
-
-func TestFailedChainStepRetriesInsteadOfAdvancing(t *testing.T) {
-	m := InitialModel(false)
-	m.action = actionFullSetup
-	m.chainIdx = 0
-	m.screen = screenDone
-	m.buildSteps()
-	m.steps[0].status = stepFail
-
-	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
-	got := updated.(model)
-	if got.chainIdx != 0 {
-		t.Fatalf("expected chain index to stay at 0, got %d", got.chainIdx)
-	}
-	if got.screen != screenRunning {
-		t.Fatalf("expected retry to enter running screen, got %d", got.screen)
-	}
-}
-
-func TestSpinnerChar(t *testing.T) {
-	frames := len(spinnerFrames)
-	for i := 0; i < frames*3; i++ {
-		got := spinnerChar(i)
-		expected := spinnerFrames[i%frames]
-		if got != expected {
-			t.Errorf("spinnerChar(%d) = %q, want %q", i, got, expected)
-		}
-	}
-}
-
-func TestDrawProgressBar(t *testing.T) {
-	tests := []struct {
-		pct   int
-		width int
-	}{
-		{0, 30},
-		{25, 30},
-		{50, 30},
-		{75, 30},
-		{100, 30},
-	}
-
-	for _, tt := range tests {
-		got := drawProgressBar(tt.pct, tt.width)
-		if len(got) == 0 {
-			t.Errorf("drawProgressBar(%d, %d) returned empty", tt.pct, tt.width)
-		}
-		if !strings.Contains(got, "%") {
-			t.Errorf("drawProgressBar(%d, %d) missing %% sign: %q", tt.pct, tt.width, got)
-		}
-	}
-}
-
-func TestActionLabel(t *testing.T) {
-	m := InitialModel(false)
-	m.action = actionBootstrap
-	m.chainIdx = -1
-
-	if got := m.actionLabel(); got != "System Bootstrap" {
-		t.Errorf("expected 'System Bootstrap', got %q", got)
-	}
-
-	m.action = actionAddUser
-	if got := m.actionLabel(); got != "Add User" {
-		t.Errorf("expected 'Add User', got %q", got)
+	if got := indentLines("a\nb", "  "); got != "  a\n  b" {
+		t.Fatalf("unexpected indentLines result: %q", got)
 	}
 }

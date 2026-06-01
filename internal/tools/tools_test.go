@@ -36,6 +36,51 @@ func TestRepoToFilename(t *testing.T) {
 	}
 }
 
+func TestInstallOptionsSelectedTools(t *testing.T) {
+	opts := InstallOptions{Yq: true, Gh: true}
+	got := opts.SelectedTools()
+	want := []Tool{ToolYq, ToolGh}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d tools, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("tool %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestInstallSelectedYqDryRun(t *testing.T) {
+	var buf bytes.Buffer
+	runner := &setupexec.DryRunner{Stdout: &buf}
+
+	setupexec.SetPrintWriter(io.Discard)
+
+	err := InstallSelected(runner, InstallOptions{Yq: true})
+	if err != nil {
+		t.Fatalf("InstallSelected with dry runner returned error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "apt update") {
+		t.Error("expected dependency apt update in output")
+	}
+	if !strings.Contains(output, "yq_linux_amd64") {
+		t.Errorf("expected yq download in dry-run output, got: %q", output)
+	}
+	if strings.Contains(output, "ripgrep") {
+		t.Errorf("did not expect unselected ripgrep command, got: %q", output)
+	}
+}
+
+func TestInstallToolRejectsUnknownTool(t *testing.T) {
+	runner := &setupexec.DryRunner{Stdout: io.Discard}
+	err := InstallTool(runner, Tool("unknown"))
+	if err == nil {
+		t.Fatal("expected unknown tool error")
+	}
+}
+
 func TestInstallYqWithDryRunner(t *testing.T) {
 	var buf bytes.Buffer
 	runner := &setupexec.DryRunner{Stdout: &buf}

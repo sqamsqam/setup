@@ -1,7 +1,21 @@
 package tui
 
 import (
+	"fmt"
+
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"github.com/sqamsqam/setup/internal/devtools"
+	"github.com/sqamsqam/setup/internal/tools"
 )
 
 type screen int
@@ -16,16 +30,6 @@ const (
 	screenDone
 )
 
-type action int
-
-const (
-	actionFullSetup action = iota
-	actionBootstrap
-	actionAddUser
-	actionInstallTools
-	actionInstallDevTools
-)
-
 type stepStatus int
 
 const (
@@ -35,68 +39,154 @@ const (
 	stepFail
 )
 
-type step struct {
-	name   string
-	status stepStatus
-	output string
-}
-
 type stepStatusMsg struct {
 	index  int
 	status stepStatus
 	output string
 }
 
-type spinnerTickMsg struct{}
+type selectionState struct {
+	Bootstrap bool
+	AddUser   bool
+	Tools     tools.InstallOptions
+	DevTools  devtools.InstallOptions
+}
 
-type menuItem struct {
-	label  string
-	action action
+func defaultSelections() selectionState {
+	return selectionState{
+		Bootstrap: true,
+		AddUser:   true,
+		Tools:     tools.AllInstallOptions(),
+		DevTools:  devtools.AllInstallOptions(),
+	}
+}
+
+func (s selectionState) Any() bool {
+	return s.Bootstrap || s.AddUser || s.Tools.Any() || s.DevTools.Any()
+}
+
+func (s selectionState) NeedsTimezone() bool {
+	return s.Bootstrap
+}
+
+func (s selectionState) NeedsUsername() bool {
+	return s.AddUser || s.DevTools.Node
+}
+
+func (s selectionState) NeedsSSHKey() bool {
+	return s.AddUser
+}
+
+type planItemID string
+
+const (
+	itemBootstrap planItemID = "bootstrap"
+	itemAddUser   planItemID = "add-user"
+	itemCLIAll    planItemID = "cli-all"
+	itemRipgrep   planItemID = "ripgrep"
+	itemFd        planItemID = "fd"
+	itemBat       planItemID = "bat"
+	itemYq        planItemID = "yq"
+	itemGlow      planItemID = "glow"
+	itemGh        planItemID = "gh"
+	itemDevAll    planItemID = "dev-all"
+	itemGo        planItemID = "go"
+	itemNode      planItemID = "node"
+)
+
+type planItem struct {
+	id    planItemID
+	title string
+	desc  string
+}
+
+func (p planItem) FilterValue() string {
+	return p.title + " " + p.desc
+}
+
+func (p planItem) Title() string {
+	return p.title
+}
+
+func (p planItem) Description() string {
+	return p.desc
+}
+
+type runStepID string
+
+const (
+	runBootstrap runStepID = "bootstrap"
+	runAddUser   runStepID = "add-user"
+	runToolDeps  runStepID = "tool-deps"
+	runTool      runStepID = "tool"
+	runGo        runStepID = "go"
+	runNode      runStepID = "node"
+)
+
+type runStep struct {
+	id     runStepID
+	tool   tools.Tool
+	name   string
 	desc   string
+	status stepStatus
+	output string
 }
 
-var actionFlow = map[action][]screen{
-	actionBootstrap:       {screenInputTimezone, screenConfirm},
-	actionAddUser:         {screenInputUser, screenInputKey, screenConfirm},
-	actionInstallTools:    {screenConfirm},
-	actionInstallDevTools: {screenInputUser, screenConfirm},
+type tuiKeys struct {
+	Toggle   key.Binding
+	Select   key.Binding
+	Continue key.Binding
+	Back     key.Binding
+	Retry    key.Binding
+	Quit     key.Binding
+	Scroll   key.Binding
 }
 
-var fullSetupChain = []action{
-	actionBootstrap,
-	actionAddUser,
-	actionInstallTools,
-	actionInstallDevTools,
+var keys = tuiKeys{
+	Toggle:   key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
+	Select:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
+	Continue: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
+	Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	Retry:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "retry")),
+	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Scroll:   key.NewBinding(key.WithKeys("pgup/pgdn"), key.WithHelp("pgup/pgdn", "scroll output")),
 }
 
-var stepNames = map[action]string{
-	actionBootstrap:       "System Bootstrap",
-	actionAddUser:         "Add User",
-	actionInstallTools:    "Install CLI Tools",
-	actionInstallDevTools: "Install Dev Tools",
+type helpKeyMap struct {
+	short []key.Binding
+	full  [][]key.Binding
+}
+
+func (k helpKeyMap) ShortHelp() []key.Binding {
+	return k.short
+}
+
+func (k helpKeyMap) FullHelp() [][]key.Binding {
+	if len(k.full) > 0 {
+		return k.full
+	}
+	return [][]key.Binding{k.short}
 }
 
 type model struct {
 	screen   screen
-	action   action
-	chainIdx int
-	flowPos  int
+	inputPos int
 
-	menuCursor int
-	menuItems  []menuItem
+	selections selectionState
+	planErr    string
+	inputErr   string
 
-	username    string
-	sshKey      string
-	timezone    string
-	usernameErr string
-	sshKeyErr   string
-	timezoneErr string
+	planList      list.Model
+	help          help.Model
+	usernameInput textinput.Model
+	timezoneInput textinput.Model
+	sshKeyInput   textarea.Model
+	spinner       spinner.Model
+	progress      progress.Model
+	output        viewport.Model
 
-	timezoneMatches []string
-	timezoneCursor  int
-
-	steps        []step
-	spinnerFrame int
+	runSteps     []runStep
+	runningIndex int
 
 	width, height int
 	dryRun        bool
@@ -104,19 +194,20 @@ type model struct {
 }
 
 func InitialModel(dryRun bool) model {
-	return model{
-		screen:   screenMainMenu,
-		chainIdx: -1,
-		timezone: "UTC",
-		dryRun:   dryRun,
-		menuItems: []menuItem{
-			{label: "Full Setup", action: actionFullSetup, desc: "Run all provisioning steps in sequence"},
-			{label: "System Bootstrap", action: actionBootstrap, desc: "Configure locale, SSH, Docker, unattended upgrades"},
-			{label: "Add User", action: actionAddUser, desc: "Create user with passwordless sudo and SSH key"},
-			{label: "Install CLI Tools", action: actionInstallTools, desc: "Install ripgrep, fd, bat, yq, glow, gh"},
-			{label: "Install Dev Tools", action: actionInstallDevTools, desc: "Install Go and Node.js toolchain"},
-		},
+	m := model{
+		screen:       screenMainMenu,
+		selections:   defaultSelections(),
+		dryRun:       dryRun,
+		help:         help.New(),
+		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
+		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color("#2E7D6B"))),
+		output:       viewport.New(),
+		runningIndex: -1,
 	}
+	m.output.SoftWrap = true
+	m.initInputs()
+	m.planList = m.newPlanList()
+	return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -143,121 +234,203 @@ func (m model) View() tea.View {
 	default:
 		v = tea.NewView("Unknown screen\n")
 	}
-	if m.screen == screenRunning && m.isChain() {
-		v.ProgressBar = tea.NewProgressBar(tea.ProgressBarDefault, m.chainProgress())
-	}
 	return v
 }
 
-func (m model) effectiveAction() action {
-	if m.isChain() && m.chainIdx >= 0 && m.chainIdx < len(fullSetupChain) {
-		return fullSetupChain[m.chainIdx]
+func (m *model) initInputs() {
+	m.usernameInput = textinput.New()
+	m.usernameInput.Prompt = ""
+	m.usernameInput.Placeholder = "dev"
+	m.usernameInput.CharLimit = 32
+	m.usernameInput.SetWidth(48)
+
+	m.timezoneInput = textinput.New()
+	m.timezoneInput.Prompt = ""
+	m.timezoneInput.Placeholder = "UTC"
+	m.timezoneInput.SetValue("UTC")
+	m.timezoneInput.SetWidth(48)
+	m.timezoneInput.ShowSuggestions = true
+	m.timezoneInput.SetSuggestions(availableTimezones())
+
+	m.sshKeyInput = textarea.New()
+	m.sshKeyInput.Prompt = ""
+	m.sshKeyInput.Placeholder = "paste an ssh-ed25519, ssh-rsa, ecdsa-*, or sk-* public key"
+	m.sshKeyInput.ShowLineNumbers = false
+	m.sshKeyInput.SetWidth(72)
+	m.sshKeyInput.SetHeight(4)
+	m.sshKeyInput.MaxHeight = 4
+}
+
+func (m model) newPlanList() list.Model {
+	delegate := list.NewDefaultDelegate()
+	delegate.SetSpacing(0)
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
+		BorderForeground(lipgloss.Color("#2E7D6B")).
+		Foreground(lipgloss.Color("#F4D35E"))
+	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(lipgloss.Color("#7DCFB6"))
+	delegate.Styles.NormalTitle = delegate.Styles.NormalTitle.Foreground(lipgloss.Color("#E8E8E8"))
+	delegate.Styles.NormalDesc = delegate.Styles.NormalDesc.Foreground(lipgloss.Color("#8A8A8A"))
+
+	l := list.New(m.planItems(), delegate, 80, 18)
+	l.Title = "Provisioning plan"
+	l.SetStatusBarItemName("step", "steps")
+	l.DisableQuitKeybindings()
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Toggle, keys.Continue, keys.Quit}
 	}
-	return m.action
-}
-
-func (m model) isChain() bool {
-	return m.action == actionFullSetup
-}
-
-func (m model) currentFlow() []screen {
-	return actionFlow[m.effectiveAction()]
-}
-
-func (m model) actionLabel() string {
-	act := m.effectiveAction()
-	if name, ok := stepNames[act]; ok {
-		return name
+	l.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Toggle, keys.Continue, keys.Quit}
 	}
-	return "Unknown"
+	return l
 }
 
-func (m *model) goNext() {
-	flow := m.currentFlow()
-	if m.flowPos < len(flow)-1 {
-		m.flowPos++
-		m.screen = flow[m.flowPos]
-	} else {
-		m.screen = screenConfirm
-	}
-}
+func (m model) planItems() []list.Item {
+	cliAll := m.selections.Tools.Ripgrep && m.selections.Tools.Fd && m.selections.Tools.Bat &&
+		m.selections.Tools.Yq && m.selections.Tools.Glow && m.selections.Tools.Gh
+	devAll := m.selections.DevTools.Go && m.selections.DevTools.Node
 
-func (m *model) goBack() {
-	if m.flowPos > 0 {
-		m.flowPos--
-		m.screen = m.currentFlow()[m.flowPos]
-	} else {
-		m.resetToMenu()
-	}
-}
-
-func (m *model) resetToMenu() {
-	m.screen = screenMainMenu
-	m.action = 0
-	m.chainIdx = -1
-	m.flowPos = 0
-	m.menuCursor = 0
-	m.username = ""
-	m.sshKey = ""
-	m.timezone = "UTC"
-	m.usernameErr = ""
-	m.sshKeyErr = ""
-	m.steps = nil
-	m.spinnerFrame = 0
-}
-
-func (m *model) buildSteps() {
-	if m.isChain() {
-		m.steps = []step{
-			{name: "System Bootstrap (locale, packages, SSH, Docker)"},
-			{name: "Add user with sudo access and SSH key"},
-			{name: "Install CLI tools (ripgrep, fd, bat, yq, glow, gh)"},
-			{name: "Install development tools (Go, Node.js toolchain)"},
-		}
-	} else {
-		switch m.effectiveAction() {
-		case actionBootstrap:
-			m.steps = []step{{name: "System Bootstrap (locale, packages, SSH, Docker)"}}
-		case actionAddUser:
-			m.steps = []step{{name: "Add user with sudo access and SSH key"}}
-		case actionInstallTools:
-			m.steps = []step{{name: "Install CLI tools (ripgrep, fd, bat, yq, glow, gh)"}}
-		case actionInstallDevTools:
-			m.steps = []step{{name: "Install development tools (Go, Node.js toolchain)"}}
-		}
+	return []list.Item{
+		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt upgrade, base packages, SSH hardening, unattended upgrades, Docker"},
+		planItem{itemAddUser, checkbox(m.selections.AddUser, m.selections.AddUser) + " Add User", "Passwordless sudo, SSH public key, linger, and AllowUsers"},
+		planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "Toggle all CLI tools below"},
+		planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "GitHub release .deb, apt fallback only when verification is unavailable"},
+		planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "GitHub release .deb, with Debian fd-find alias handling"},
+		planItem{itemBat, "  " + checkbox(m.selections.Tools.Bat, m.selections.Tools.Bat) + " bat", "GitHub release .deb, with Debian batcat alias handling"},
+		planItem{itemYq, "  " + checkbox(m.selections.Tools.Yq, m.selections.Tools.Yq) + " yq", "Verified linux/amd64 binary from mikefarah/yq"},
+		planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with key fingerprint verification"},
+		planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with key fingerprint verification"},
+		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Toggle Go and Node.js tooling below"},
+		planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide install from go.dev with SHA256 verification"},
+		planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, latest Node, corepack, TypeScript, and tsx"},
 	}
 }
 
-func (m model) runningStepIndex() int {
-	if m.isChain() {
-		return m.chainIdx
+func checkbox(checked, partial bool) string {
+	if checked {
+		return "[x]"
 	}
-	return 0
+	if partial {
+		return "[-]"
+	}
+	return "[ ]"
 }
 
-func (m model) chainProgress() int {
-	if !m.isChain() || len(m.steps) == 0 {
+func (m *model) refreshPlanList() tea.Cmd {
+	return m.planList.SetItems(m.planItems())
+}
+
+func (m *model) resize(width, height int) {
+	m.width = width
+	m.height = height
+
+	contentWidth := width - 6
+	if contentWidth < 40 {
+		contentWidth = 40
+	}
+	if contentWidth > 96 {
+		contentWidth = 96
+	}
+
+	listHeight := height - 9
+	if listHeight < 12 {
+		listHeight = 12
+	}
+	m.planList.SetSize(contentWidth, listHeight)
+	m.help.SetWidth(contentWidth)
+	m.usernameInput.SetWidth(contentWidth - 4)
+	m.timezoneInput.SetWidth(contentWidth - 4)
+	m.sshKeyInput.SetWidth(contentWidth - 4)
+	m.output.SetWidth(contentWidth)
+
+	outputHeight := height - 16
+	if outputHeight < 6 {
+		outputHeight = 6
+	}
+	m.output.SetHeight(outputHeight)
+
+	progressWidth := contentWidth - 12
+	if progressWidth < 18 {
+		progressWidth = 18
+	}
+	if progressWidth > 52 {
+		progressWidth = 52
+	}
+	m.progress.SetWidth(progressWidth)
+}
+
+func (m model) inputFlow() []screen {
+	var flow []screen
+	if m.selections.NeedsTimezone() {
+		flow = append(flow, screenInputTimezone)
+	}
+	if m.selections.NeedsUsername() {
+		flow = append(flow, screenInputUser)
+	}
+	if m.selections.NeedsSSHKey() {
+		flow = append(flow, screenInputKey)
+	}
+	return flow
+}
+
+func (m model) selectedPlanCount() int {
+	count := 0
+	if m.selections.Bootstrap {
+		count++
+	}
+	if m.selections.AddUser {
+		count++
+	}
+	count += len(m.selections.Tools.SelectedTools())
+	if m.selections.DevTools.Go {
+		count++
+	}
+	if m.selections.DevTools.Node {
+		count++
+	}
+	return count
+}
+
+func (m model) runProgress() float64 {
+	if len(m.runSteps) == 0 {
 		return 0
 	}
-	completed := 0
-	for _, s := range m.steps {
-		if s.status == stepOK {
-			completed++
+	done := 0
+	for _, step := range m.runSteps {
+		if step.status == stepOK {
+			done++
 		}
 	}
-	return (completed * 100) / len(m.steps)
+	return float64(done) / float64(len(m.runSteps))
+}
+
+func (m model) completedRunSteps() int {
+	done := 0
+	for _, step := range m.runSteps {
+		if step.status == stepOK {
+			done++
+		}
+	}
+	return done
 }
 
 func statusIcon(s stepStatus) string {
 	switch s {
 	case stepPending:
-		return "  "
+		return "[ ]"
 	case stepRunning:
 		return "[*]"
 	case stepOK:
 		return "[✓]"
 	case stepFail:
 		return "[✗]"
+	default:
+		return "[ ]"
 	}
-	return "  "
+}
+
+func (m model) currentStepSummary() string {
+	if m.runningIndex < 0 || m.runningIndex >= len(m.runSteps) {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d %s", m.runningIndex+1, len(m.runSteps), m.runSteps[m.runningIndex].name)
 }

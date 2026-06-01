@@ -14,50 +14,74 @@ import (
 	"github.com/sqamsqam/setup/internal/user"
 )
 
-func newWizardRunner(dryRun bool) setupexec.CmdRunner {
+func newWizardRunner(dryRun bool, output io.Writer) setupexec.CmdRunner {
+	if output == nil {
+		output = io.Discard
+	}
 	if dryRun {
 		dr := setupexec.NewDryRunner()
-		dr.Stdout = io.Discard
+		dr.Stdout = output
 		return dr
 	}
 	real := setupexec.NewRealRunner()
 	real.Env = append(real.Env, "DEBIAN_FRONTEND=noninteractive")
+	real.Stdin = nil
+	real.Stdout = output
+	real.Stderr = output
 	return real
 }
 
 func runProvisioningStep(m model) tea.Cmd {
 	return func() tea.Msg {
-		runner := newWizardRunner(m.dryRun)
-		var dryBuf *bytes.Buffer
-		if dr, ok := runner.(*setupexec.DryRunner); ok {
-			dryBuf = &bytes.Buffer{}
-			dr.Stdout = dryBuf
-		}
-		act := m.effectiveAction()
-		stepIdx := m.runningStepIndex()
-
-		var err error
-		switch act {
-		case actionBootstrap:
-			err = system.Bootstrap(runner, m.timezone)
-		case actionAddUser:
-			err = user.AddUser(runner, m.username, m.sshKey)
-		case actionInstallTools:
-			err = tools.InstallAll(runner)
-		case actionInstallDevTools:
-			err = devtools.InstallAllDevTools(runner, m.username)
+		stepIdx := m.runningIndex
+		if stepIdx < 0 || stepIdx >= len(m.runSteps) {
+			return stepStatusMsg{index: stepIdx, status: stepFail, output: "invalid run step"}
 		}
 
-		if m.dryRun && err == nil {
-			output := "(dry run)"
-			if dryBuf != nil && strings.TrimSpace(dryBuf.String()) != "" {
-				output = dryBuf.String()
-			}
-			return stepStatusMsg{index: stepIdx, status: stepOK, output: output}
+		var out bytes.Buffer
+		setupexec.SetPrintWriter(&out)
+		defer setupexec.SetPrintWriter(io.Discard)
+
+		runner := newWizardRunner(m.dryRun, &out)
+		step := m.runSteps[stepIdx]
+		err := runStepWithRunner(runner, m, step)
+		output := strings.TrimSpace(out.String())
+
+		if m.dryRun && err == nil && output == "" {
+			output = "(dry run)"
 		}
 		if err != nil {
-			return stepStatusMsg{index: stepIdx, status: stepFail, output: err.Error()}
+			if output != "" {
+				output += "\n"
+			}
+			output += err.Error()
+			return stepStatusMsg{index: stepIdx, status: stepFail, output: output}
 		}
-		return stepStatusMsg{index: stepIdx, status: stepOK}
+		return stepStatusMsg{index: stepIdx, status: stepOK, output: output}
+	}
+}
+
+func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error {
+	username := strings.TrimSpace(m.usernameInput.Value())
+	timezone := strings.TrimSpace(m.timezoneInput.Value())
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	switch step.id {
+	case runBootstrap:
+		return system.Bootstrap(runner, timezone)
+	case runAddUser:
+		return user.AddUser(runner, username, normalizeSSHKeyInput(m.sshKeyInput.Value()))
+	case runToolDeps:
+		return tools.InstallDependencies(runner)
+	case runTool:
+		return tools.InstallTool(runner, step.tool)
+	case runGo:
+		return devtools.InstallGo(runner)
+	case runNode:
+		return devtools.InstallNode(runner, username)
+	default:
+		return nil
 	}
 }

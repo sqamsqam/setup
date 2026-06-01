@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-01
+
+### Added
+- TUI provisioning plans are now configurable before execution, including per-tool toggles for ripgrep, fd, bat, yq, glow, gh, Go, and Node.js.
+- The TUI now uses Bubble Tea component models from Bubbles for lists, text input, SSH key editing, spinner, progress, help text, and scrollable output.
+
+### Changed
+- The default TUI plan replaces the fixed Full Setup chain while still selecting the full bootstrap flow by default.
+- TUI provisioning output is captured inside the running/done views instead of writing directly over the terminal UI.
+
 ## [0.4.2] - 2026-06-01
 
 ### Security
@@ -107,6 +117,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.5.0]: https://github.com/sqamsqam/setup/releases/tag/v0.5.0
 [0.4.2]: https://github.com/sqamsqam/setup/releases/tag/v0.4.2
 [0.4.1]: https://github.com/sqamsqam/setup/releases/tag/v0.4.1
 [0.4.0]: https://github.com/sqamsqam/setup/releases/tag/v0.4.0

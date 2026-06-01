@@ -13,36 +13,117 @@ import (
 	"github.com/sqamsqam/setup/internal/github"
 )
 
+type InstallOptions struct {
+	Ripgrep bool
+	Fd      bool
+	Bat     bool
+	Yq      bool
+	Glow    bool
+	Gh      bool
+}
+
+type Tool string
+
+const (
+	ToolRipgrep Tool = "ripgrep"
+	ToolFd      Tool = "fd"
+	ToolBat     Tool = "bat"
+	ToolYq      Tool = "yq"
+	ToolGlow    Tool = "glow"
+	ToolGh      Tool = "gh"
+)
+
+func AllInstallOptions() InstallOptions {
+	return InstallOptions{
+		Ripgrep: true,
+		Fd:      true,
+		Bat:     true,
+		Yq:      true,
+		Glow:    true,
+		Gh:      true,
+	}
+}
+
+func (o InstallOptions) Any() bool {
+	return o.Ripgrep || o.Fd || o.Bat || o.Yq || o.Glow || o.Gh
+}
+
+func (o InstallOptions) SelectedTools() []Tool {
+	var selected []Tool
+	if o.Ripgrep {
+		selected = append(selected, ToolRipgrep)
+	}
+	if o.Fd {
+		selected = append(selected, ToolFd)
+	}
+	if o.Bat {
+		selected = append(selected, ToolBat)
+	}
+	if o.Yq {
+		selected = append(selected, ToolYq)
+	}
+	if o.Glow {
+		selected = append(selected, ToolGlow)
+	}
+	if o.Gh {
+		selected = append(selected, ToolGh)
+	}
+	return selected
+}
+
 func InstallAll(runner setupexec.CmdRunner) error {
-	steps := []struct {
-		name string
-		fn   func() error
-	}{
-		{"Installing ripgrep", func() error {
-			return installGitHubDeb(runner, "ripgrep", "ripgrep", "BurntSushi/ripgrep", `ripgrep_.*_amd64\.deb$`)
-		}},
-		{"Installing fd", func() error { return installGitHubDeb(runner, "fd", "fd-find", "sharkdp/fd", `fd_.*_amd64\.deb$`) }},
-		{"Installing bat", func() error { return installGitHubDeb(runner, "bat", "bat", "sharkdp/bat", `bat_.*_amd64\.deb$`) }},
-		{"Installing yq", func() error { return installYq(runner) }},
-		{"Installing glow", func() error { return installGlow(runner) }},
-		{"Installing gh", func() error { return installGh(runner) }},
+	return InstallSelected(runner, AllInstallOptions())
+}
+
+func InstallSelected(runner setupexec.CmdRunner, opts InstallOptions) error {
+	if !opts.Any() {
+		setupexec.PrintStep("No CLI tools selected")
+		return nil
 	}
 
-	if err := ensureDeps(runner); err != nil {
+	if err := InstallDependencies(runner); err != nil {
 		return err
 	}
 
-	for _, step := range steps {
-		setupexec.PrintStep(step.name)
-		if err := step.fn(); err != nil {
-			setupexec.PrintError(step.name)
-			return fmt.Errorf("%s: %w", step.name, err)
+	for _, tool := range opts.SelectedTools() {
+		name := "Installing " + ToolName(tool)
+		setupexec.PrintStep(name)
+		if err := InstallTool(runner, tool); err != nil {
+			setupexec.PrintError(name)
+			return fmt.Errorf("%s: %w", name, err)
 		}
-		setupexec.PrintDone(step.name)
+		setupexec.PrintDone(name)
 	}
 
 	setupexec.PrintDone("CLI tools installed")
 	return nil
+}
+
+func ToolName(tool Tool) string {
+	return string(tool)
+}
+
+func InstallDependencies(runner setupexec.CmdRunner) error {
+	return ensureDeps(runner)
+}
+
+func InstallTool(runner setupexec.CmdRunner, tool Tool) error {
+	switch tool {
+	case ToolRipgrep:
+		return installGitHubDeb(runner, "ripgrep", "ripgrep", "BurntSushi/ripgrep", `ripgrep_.*_amd64\.deb$`)
+	case ToolFd:
+		return installGitHubDeb(runner, "fd", "fd-find", "sharkdp/fd", `fd_.*_amd64\.deb$`)
+	case ToolBat:
+		return installGitHubDeb(runner, "bat", "bat", "sharkdp/bat", `bat_.*_amd64\.deb$`)
+	case ToolYq:
+		return installYq(runner)
+	case ToolGlow:
+		return installGlow(runner)
+	case ToolGh:
+		return installGh(runner)
+	default:
+		return fmt.Errorf("unknown CLI tool %q", tool)
+	}
 }
 
 func ensureDeps(runner setupexec.CmdRunner) error {

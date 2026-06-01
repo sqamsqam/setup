@@ -256,12 +256,37 @@ func detectShell(runner setupexec.CmdRunner, username string) string {
 	return "bash"
 }
 
+type InstallOptions struct {
+	Go   bool
+	Node bool
+}
+
+func AllInstallOptions() InstallOptions {
+	return InstallOptions{Go: true, Node: true}
+}
+
+func (o InstallOptions) Any() bool {
+	return o.Go || o.Node
+}
+
 func InstallAllDevTools(runner setupexec.CmdRunner, username string) error {
-	if err := InstallGo(runner); err != nil {
-		return err
+	return InstallSelected(runner, username, AllInstallOptions())
+}
+
+func InstallSelected(runner setupexec.CmdRunner, username string, opts InstallOptions) error {
+	if !opts.Any() {
+		setupexec.PrintStep("No development tools selected")
+		return nil
 	}
-	if err := InstallNode(runner, username); err != nil {
-		return err
+	if opts.Go {
+		if err := InstallGo(runner); err != nil {
+			return err
+		}
+	}
+	if opts.Node {
+		if err := InstallNode(runner, username); err != nil {
+			return err
+		}
 	}
 	return nil
 }

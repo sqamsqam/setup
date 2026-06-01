@@ -17,6 +17,23 @@ func (m *mockRunner) Output(name string, args ...string) (string, error) {
 	return m.outputFunc(name, args...)
 }
 
+func TestInstallOptions(t *testing.T) {
+	opts := AllInstallOptions()
+	if !opts.Go || !opts.Node || !opts.Any() {
+		t.Fatalf("expected all dev tools selected, got %#v", opts)
+	}
+
+	opts.Node = false
+	if !opts.Any() {
+		t.Fatal("go-only options should count as non-empty")
+	}
+
+	opts.Go = false
+	if opts.Any() {
+		t.Fatal("empty options should not count as non-empty")
+	}
+}
+
 func TestParseGoReleaseValid(t *testing.T) {
 	jsonData := `[
 		{

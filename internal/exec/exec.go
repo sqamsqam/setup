@@ -52,12 +52,18 @@ type CmdRunner interface {
 }
 
 type RealRunner struct {
-	Env []string
+	Env    []string
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 func NewRealRunner() *RealRunner {
 	return &RealRunner{
-		Env: safeEnv(os.Environ()),
+		Env:    safeEnv(os.Environ()),
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
 	}
 }
 
@@ -68,9 +74,9 @@ func (r *RealRunner) Run(name string, args ...string) error {
 	}
 	cmd := osexec.Command(path, args...)
 	cmd.Env = r.Env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = r.Stdin
+	cmd.Stdout = r.Stdout
+	cmd.Stderr = r.Stderr
 	return cmd.Run()
 }
 
@@ -101,9 +107,9 @@ func (r *RealRunner) Shell(script string) error {
 	}
 	cmd := osexec.Command(path, "-c", script)
 	cmd.Env = r.Env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = r.Stdin
+	cmd.Stdout = r.Stdout
+	cmd.Stderr = r.Stderr
 	return cmd.Run()
 }
 
