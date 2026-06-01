@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-06-01
+
+### Changed
+- GitHub Actions workflows now use the latest Node 24-compatible action versions.
+
 ## [0.8.5] - 2026-06-01
 
 ### Changed
