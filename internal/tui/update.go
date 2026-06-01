@@ -515,7 +515,7 @@ func (m *model) refreshOutput() {
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}
-		fmt.Fprintf(&b, "== %s ==\n%s", step.name, strings.TrimSpace(step.output))
+		fmt.Fprintf(&b, "▶ %s\n%s", step.name, strings.TrimSpace(step.output))
 	}
 	m.output.SetContent(colorizeLog(b.String()))
 	m.output.GotoBottom()

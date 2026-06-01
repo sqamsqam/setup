@@ -215,7 +215,7 @@ func InitialModel(dryRun bool) model {
 	m.confirm.FillHeight = true
 	m.steps.SoftWrap = true
 	m.steps.FillHeight = true
-	m.output.SoftWrap = true
+	m.output.SoftWrap = false
 	m.output.FillHeight = true
 	m.initInputs()
 	m.planList = m.newPlanList()

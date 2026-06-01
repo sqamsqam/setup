@@ -293,6 +293,22 @@ func TestRunningViewFitsTerminalHeight(t *testing.T) {
 	}
 }
 
+func TestRunningViewFitsTerminalHeightWithLongLogLines(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = m.buildRunSteps()
+	m.runningIndex = 0
+	m.runSteps[0].status = stepRunning
+	m.runSteps[0].output = strings.Repeat("x", 2000)
+	m.resize(80, 24)
+	m.screen = screenRunning
+	m.refreshSteps()
+	m.refreshOutput()
+
+	if got := lipgloss.Height(m.runningView()); got > m.height {
+		t.Fatalf("running view height = %d, want <= %d", got, m.height)
+	}
+}
+
 func TestDoneViewFitsTerminalHeight(t *testing.T) {
 	m := InitialModel(false)
 	m.runSteps = m.buildRunSteps()

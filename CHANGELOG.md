@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-06-01
+
+### Changed
+- TUI provisioning logs now use a fixed-height output pane with a header, scroll position status, and clearer step separators.
+
+### Fixed
+- TUI provisioning logs no longer expand the run screen when long output lines would wrap.
+
 ## [0.5.3] - 2026-06-01
 
 ### Fixed

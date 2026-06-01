@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 
 	"github.com/sqamsqam/setup/internal/user"
@@ -40,6 +41,9 @@ var (
 	logErrorStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FF6B6B"))
+	logPanelTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#E8E8E8"))
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#2E7D6B")).
@@ -237,11 +241,13 @@ func (m model) runBodyView() string {
 		steps := runPanelStyle.
 			Width(m.stepPanelWidth()).
 			Height(m.output.Height()).
+			MaxHeight(m.output.Height()).
 			Render(m.steps.View())
 		log := runPanelStyle.
 			Width(m.output.Width() + 2).
 			Height(m.output.Height()).
-			Render(m.logView())
+			MaxHeight(m.output.Height()).
+			Render(m.logPanelView())
 		return lipgloss.JoinHorizontal(lipgloss.Top, steps, "  ", log)
 	}
 
@@ -249,20 +255,54 @@ func (m model) runBodyView() string {
 	s.WriteString(runPanelStyle.
 		Width(m.steps.Width() + 2).
 		Height(m.steps.Height()).
+		MaxHeight(m.steps.Height()).
 		Render(m.steps.View()))
 	s.WriteString("\n")
 	s.WriteString(runPanelStyle.
 		Width(m.output.Width() + 2).
 		Height(m.output.Height()).
-		Render(m.logView()))
+		MaxHeight(m.output.Height()).
+		Render(m.logPanelView()))
 	return s.String()
 }
 
-func (m model) logView() string {
+func (m model) logPanelView() string {
+	header := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		logPanelTitleStyle.Render("Output log"),
+		"  ",
+		dimStyle.Render(logScrollHint(m.output)),
+	)
+
+	bodyHeight := m.output.Height() - 2
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+	body := m.logView(bodyHeight)
+	return header + "\n" + dimStyle.Render(strings.Repeat("─", max(1, m.output.Width()))) + "\n" + body
+}
+
+func (m model) logView(height int) string {
 	if strings.TrimSpace(m.output.GetContent()) == "" {
 		return dimStyle.Render("Log output will appear here.")
 	}
-	return m.output.View()
+	return lipgloss.NewStyle().Height(height).MaxHeight(height).Render(m.output.View())
+}
+
+func logScrollHint(v viewport.Model) string {
+	if strings.TrimSpace(v.GetContent()) == "" {
+		return "waiting"
+	}
+	switch {
+	case v.AtTop() && v.AtBottom():
+		return "all output visible"
+	case v.AtBottom():
+		return "bottom"
+	case v.AtTop():
+		return "top"
+	default:
+		return fmt.Sprintf("%3.0f%%", v.ScrollPercent()*100)
+	}
 }
 
 func (m model) page(title, subtitle, body string, bindings []key.Binding) string {
@@ -370,6 +410,8 @@ func colorizeLog(s string) string {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		switch {
+		case strings.HasPrefix(trimmed, "▶ "):
+			lines[i] = logStepStyle.Render(line)
 		case strings.HasPrefix(trimmed, "== ") && strings.HasSuffix(trimmed, " =="):
 			lines[i] = logStepStyle.Render(line)
 		case strings.HasPrefix(trimmed, "$ ") || strings.HasPrefix(trimmed, "[DRY-RUN]"):
