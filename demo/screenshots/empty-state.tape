@@ -9,7 +9,11 @@ Set WindowBarSize 32
 Set BorderRadius 8
 Set TypingSpeed 20ms
 
-Type "env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 ./bin/setup-linux-amd64 --demo"
+Hide
+Type "unset NO_COLOR; export TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1; clear"
+Enter
+Show
+Type "./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
 Space

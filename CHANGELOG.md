@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-06-01
+
+### Changed
+- Demo recordings now hide color-environment setup while preserving colorized terminal GIFs and use slower section transitions.
+
 ## [0.8.3] - 2026-06-01
 
 ### Changed
@@ -209,6 +214,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.8.4]: https://github.com/sqamsqam/setup/releases/tag/v0.8.4
 [0.8.3]: https://github.com/sqamsqam/setup/releases/tag/v0.8.3
 [0.8.2]: https://github.com/sqamsqam/setup/releases/tag/v0.8.2
 [0.8.1]: https://github.com/sqamsqam/setup/releases/tag/v0.8.1

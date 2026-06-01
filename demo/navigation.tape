@@ -12,34 +12,38 @@ Set BorderRadius 8
 Set TypingSpeed 18ms
 Set Framerate 24
 
-Type "env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 ./bin/setup-linux-amd64 --demo"
+Hide
+Type "unset NO_COLOR; export TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1; clear"
+Enter
+Show
+Type "./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
-Sleep 500ms
+Sleep 800ms
 Down 4
-Sleep 300ms
+Sleep 450ms
 Space
-Sleep 300ms
+Sleep 450ms
 Down 7
-Sleep 300ms
+Sleep 450ms
 Space
-Sleep 300ms
+Sleep 550ms
 Enter
 Wait+Screen /TIMEZONE/
-Sleep 300ms
+Sleep 600ms
 Backspace 3
 Type "new york"
-Sleep 300ms
+Sleep 650ms
 Tab
-Sleep 300ms
+Sleep 650ms
 Enter
 Wait+Screen /Target User/
 Type "dev"
-Sleep 300ms
+Sleep 600ms
 Enter
 Wait+Screen /SSH PUBLIC KEY/
 Type "ssh-ed25519 AAAAAAAAAAAAAAAAAAAAAA== setup-demo"
-Sleep 300ms
+Sleep 700ms
 Enter
 Wait+Screen /Review Plan/
-Sleep 1s
+Sleep 1500ms
