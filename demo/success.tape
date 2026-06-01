@@ -12,7 +12,7 @@ Set BorderRadius 8
 Set TypingSpeed 12ms
 Set Framerate 24
 
-Type "./bin/setup-linux-amd64 --demo"
+Type "env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 ./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
 Down 11
@@ -22,12 +22,12 @@ Space
 Down
 Space
 Enter
-Wait+Screen /Timezone/
+Wait+Screen /TIMEZONE/
 Enter
 Wait+Screen /Target User/
 Type "dev"
 Enter
-Wait+Screen /SSH public key/
+Wait+Screen /SSH PUBLIC KEY/
 Type "ssh-ed25519 AAAAAAAAAAAAAAAAAAAAAA== setup-demo"
 Enter
 Wait+Screen /Review Plan/

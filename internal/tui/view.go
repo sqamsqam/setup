@@ -8,69 +8,36 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sqamsqam/setup/internal/user"
-)
-
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#F4D35E"))
-	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#A7C7E7"))
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#8A8A8A"))
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF6B6B"))
-	successStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7DCFB6"))
-	warnStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F4D35E"))
-	accentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7DCFB6"))
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#686868"))
-	logStepStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#A7C7E7"))
-	logCommandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F4D35E"))
-	logDoneStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7DCFB6"))
-	logErrorStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FF6B6B"))
-	logPanelTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#E8E8E8"))
-	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#2E7D6B")).
-			Padding(1, 2)
-	runPanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#2E7D6B")).
-			Padding(0, 1)
 )
 
 func (m model) mainMenuView() string {
 	var s strings.Builder
 	s.WriteString(titleStyle.Render("Fresh Ubuntu Instance Setup"))
+	s.WriteString(" ")
+	s.WriteString(statusStyle.Render("PROVISIONING CONSOLE"))
 	s.WriteString("\n")
 	s.WriteString(subtitleStyle.Render("Pick what this container needs, then review the plan."))
 	s.WriteString("\n\n")
 
 	if !m.dryRun && !m.demo && os.Geteuid() != 0 {
-		s.WriteString(errorStyle.Render("WARNING: not running as root. Provisioning may fail."))
+		s.WriteString(errorStyle.Render("ROOT CHECK"))
+		s.WriteString(" ")
+		s.WriteString(valueStyle.Render("Not running as root. Provisioning may fail."))
 		s.WriteString("\n")
 	}
 	if m.dryRun && !m.demo {
-		s.WriteString(warnStyle.Render("DRY RUN: commands will be logged without changing the system."))
+		s.WriteString(warnStyle.Render("DRY RUN"))
+		s.WriteString(" ")
+		s.WriteString(valueStyle.Render("Commands will be logged without changing the system."))
 		s.WriteString("\n")
 	}
 	if m.planErr != "" {
-		s.WriteString(errorStyle.Render(m.planErr))
+		s.WriteString(errorStyle.Render("PLAN CHECK"))
+		s.WriteString(" ")
+		s.WriteString(valueStyle.Render(m.planErr))
 		s.WriteString("\n")
 	}
 	if (!m.dryRun && !m.demo && os.Geteuid() != 0) || (m.dryRun && !m.demo) || m.planErr != "" {
@@ -84,14 +51,15 @@ func (m model) mainMenuView() string {
 }
 
 func (m model) inputTimezoneView() string {
-	body := "Timezone\n\n"
+	body := fieldLabelStyle.Render("TIMEZONE")
+	body += "\n\n"
 	body += m.timezoneInput.View()
 	body += "\n\n"
 	body += m.timezoneMatchesView()
 	body += "\n\n"
-	body += dimStyle.Render("Fuzzy search is supported. Use Tab to accept, Up/Down to choose. Blank defaults to UTC.")
+	body += dimStyle.Render("Fuzzy search is supported. Tab accepts a match; blank defaults to UTC.")
 	if m.inputErr != "" {
-		body += "\n\n" + errorStyle.Render(m.inputErr)
+		body += "\n\n" + errorBlock(m.inputErr)
 	}
 	return m.page("System Bootstrap", "Set the container timezone.", body, []key.Binding{keys.Continue, keys.Back})
 }
@@ -115,7 +83,7 @@ func (m model) timezoneMatchesView() string {
 		prefix := "  "
 		style := dimStyle
 		if i == m.timezoneMatchIndex {
-			prefix = "> "
+			prefix = "› "
 			style = accentStyle
 		}
 		b.WriteString(style.Render(prefix + match))
@@ -124,25 +92,29 @@ func (m model) timezoneMatchesView() string {
 }
 
 func (m model) inputUserView() string {
-	body := "Username\n\n"
+	body := fieldLabelStyle.Render("USERNAME")
+	body += "\n\n"
 	body += m.usernameInput.View()
 	body += "\n\n"
 	body += dimStyle.Render("Must match ^[a-z_][a-z0-9_-]*$ and be 32 characters or fewer.")
 	if m.inputErr != "" {
-		body += "\n\n" + errorStyle.Render(m.inputErr)
+		body += "\n\n" + errorBlock(m.inputErr)
 	}
 	return m.page("Target User", "Used for account creation and per-user Node.js tooling.", body, []key.Binding{keys.Continue, keys.Back})
 }
 
 func (m model) inputKeyView() string {
-	body := "SSH public key\n\n"
+	body := fieldLabelStyle.Render("SSH PUBLIC KEY")
+	body += "\n\n"
 	body += m.sshKeyInput.View()
 	pubkey := normalizeSSHKeyInput(m.sshKeyInput.Value())
 	if m.inputErr != "" {
-		body += "\n\n" + errorStyle.Render(m.inputErr)
+		body += "\n\n" + errorBlock(m.inputErr)
 	} else if pubkey != "" {
 		if err := user.ValidateSSHKey(pubkey); err == nil {
-			body += "\n\n" + dimStyle.Render(user.SSHKeySummary(pubkey))
+			body += "\n\n" + accentStyle.Render("Verified key")
+			body += " "
+			body += dimStyle.Render(user.SSHKeySummary(pubkey))
 		}
 	}
 	return m.page("Add User", "Paste the public key that should be installed for the user.", body, []key.Binding{keys.Continue, keys.Back})
@@ -154,14 +126,21 @@ func (m model) confirmView() string {
 
 func (m model) confirmBody() string {
 	var body strings.Builder
-	body.WriteString("Selected plan\n\n")
+	body.WriteString(sectionStyle.Render("Selected plan"))
+	body.WriteString("\n")
+	body.WriteString(divider(48))
+	body.WriteString("\n")
 	for _, line := range m.planSummaryLines() {
-		body.WriteString("  ")
+		body.WriteString(accentStyle.Render("  • "))
 		body.WriteString(line)
 		body.WriteString("\n")
 	}
 
-	body.WriteString("\nInputs\n")
+	body.WriteString("\n")
+	body.WriteString(sectionStyle.Render("Inputs"))
+	body.WriteString("\n")
+	body.WriteString(divider(48))
+	body.WriteString("\n")
 	if m.selections.NeedsTimezone() {
 		fmt.Fprintf(&body, "  Timezone: %s\n", strings.TrimSpace(m.timezoneInput.Value()))
 	}
@@ -174,13 +153,17 @@ func (m model) confirmBody() string {
 	}
 
 	if m.selections.Bootstrap || m.selections.AddUser {
-		body.WriteString("\nAccess changes\n")
+		body.WriteString("\n")
+		body.WriteString(sectionStyle.Render("Access changes"))
+		body.WriteString("\n")
+		body.WriteString(divider(48))
+		body.WriteString("\n")
 	}
 	if m.selections.Bootstrap {
-		body.WriteString("  SSH will be hardened, root SSH login disabled, and the root password locked.\n")
+		body.WriteString("  SSH hardening, root SSH disabled, root password locked.\n")
 	}
 	if m.selections.AddUser {
-		body.WriteString("  The user receives passwordless sudo and SSH AllowUsers is regenerated.\n")
+		body.WriteString("  User receives passwordless sudo and managed SSH AllowUsers.\n")
 	}
 	if m.selections.FirewallBaseline {
 		body.WriteString("  UFW will allow the detected SSH port before enabling default-deny incoming rules.\n")
@@ -196,7 +179,9 @@ func (m model) confirmBody() string {
 	}
 	if m.dryRun && !m.demo {
 		body.WriteString("\n")
-		body.WriteString(warnStyle.Render("DRY RUN: no changes will be made."))
+		body.WriteString(warnStyle.Render("DRY RUN"))
+		body.WriteString(" ")
+		body.WriteString(valueStyle.Render("No changes will be made."))
 		body.WriteString("\n")
 	}
 
@@ -277,9 +262,9 @@ func (m model) runBodyView() string {
 func (m model) logPanelView() string {
 	header := lipgloss.JoinHorizontal(
 		lipgloss.Top,
-		logPanelTitleStyle.Render("Output log"),
+		logPanelTitleStyle.Render("OUTPUT LOG"),
 		"  ",
-		dimStyle.Render(logScrollHint(m.output)),
+		statusStyle.Render(logScrollHint(m.output)),
 	)
 
 	bodyHeight := m.output.Height() - 2
@@ -287,7 +272,7 @@ func (m model) logPanelView() string {
 		bodyHeight = 1
 	}
 	body := m.logView(bodyHeight)
-	return header + "\n" + dimStyle.Render(strings.Repeat("─", max(1, m.output.Width()))) + "\n" + body
+	return header + "\n" + divider(m.output.Width()) + "\n" + body
 }
 
 func (m model) logView(height int) string {
@@ -359,11 +344,15 @@ func (m model) stepsContent() string {
 		s.WriteString(line)
 		if step.desc != "" && step.status == stepPending {
 			s.WriteString("\n      ")
-			s.WriteString(dimStyle.Render(step.desc))
+			s.WriteString(faintStyle.Render(step.desc))
 		}
 		s.WriteString("\n")
 	}
 	return s.String()
+}
+
+func errorBlock(message string) string {
+	return errorStyle.Render("INPUT CHECK") + " " + valueStyle.Render(message)
 }
 
 func (m model) planSummaryLines() []string {
@@ -470,6 +459,17 @@ func colorizeLog(s string) string {
 		case strings.HasPrefix(trimmed, "✗ "):
 			lines[i] = logErrorStyle.Render(line)
 		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func truncateLogLines(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
 	}
 	return strings.Join(lines, "\n")
 }

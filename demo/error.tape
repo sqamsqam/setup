@@ -12,11 +12,11 @@ Set BorderRadius 8
 Set TypingSpeed 18ms
 Set Framerate 24
 
-Type "./bin/setup-linux-amd64 --demo"
+Type "env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor CLICOLOR_FORCE=1 ./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
 Enter
-Wait+Screen /Timezone/
+Wait+Screen /TIMEZONE/
 Enter
 Wait+Screen /Target User/
 Type "Root User"

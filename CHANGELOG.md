@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-06-01
+
+### Changed
+- Refined the TUI visual system with bolder semantic colors, sharper panels, clearer focused states, and denser provisioning-plan copy.
+
 ## [0.8.2] - 2026-06-01
 
 ### Changed
@@ -204,6 +209,9 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.8.3]: https://github.com/sqamsqam/setup/releases/tag/v0.8.3
+[0.8.2]: https://github.com/sqamsqam/setup/releases/tag/v0.8.2
+[0.8.1]: https://github.com/sqamsqam/setup/releases/tag/v0.8.1
 [0.8.0]: https://github.com/sqamsqam/setup/releases/tag/v0.8.0
 [0.7.0]: https://github.com/sqamsqam/setup/releases/tag/v0.7.0
 [0.6.0]: https://github.com/sqamsqam/setup/releases/tag/v0.6.0

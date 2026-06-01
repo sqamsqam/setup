@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/sqamsqam/setup/internal/tools"
 )
@@ -110,8 +112,57 @@ func TestMainMenuSpaceTogglesSelectedPlanItem(t *testing.T) {
 	if !ok {
 		t.Fatal("expected selected plan item")
 	}
-	if !strings.HasPrefix(item.Title(), "[ ] System Bootstrap") {
-		t.Fatalf("expected plan list item to render unchecked, got %q", item.Title())
+	_, state, title := splitPlanTitle(item.Title())
+	if state != toggleOff || title != "System Bootstrap" {
+		t.Fatalf("expected unchecked System Bootstrap item, got state=%d title=%q", state, title)
+	}
+}
+
+func TestPlanDelegateTruncatesRowsToListWidth(t *testing.T) {
+	m := InitialModel(false)
+	m.resize(52, 24)
+
+	var out bytes.Buffer
+	item := planItem{
+		id:    itemBootstrap,
+		title: checkbox(true, true) + " System Bootstrap With A Very Long Name",
+		desc:  "This description is intentionally long enough that it would wrap if the delegate did not truncate it.",
+	}
+	planDelegate{}.Render(&out, m.planList, 0, item)
+
+	for _, line := range strings.Split(out.String(), "\n") {
+		if got := ansi.StringWidth(ansi.Strip(line)); got > m.planList.Width() {
+			t.Fatalf("rendered line width = %d, want <= %d: %q", got, m.planList.Width(), line)
+		}
+	}
+}
+
+func TestPlanDelegateUsesToggleGlyphs(t *testing.T) {
+	m := InitialModel(false)
+	m.resize(80, 24)
+
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{"on", checkbox(true, true) + " System Bootstrap", "●"},
+		{"partial", checkbox(false, true) + " Instance Management", "◐"},
+		{"off", checkbox(false, false) + " Allow HTTP", "○"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			planDelegate{}.Render(&out, m.planList, 0, planItem{title: tt.title, desc: "desc"})
+			rendered := ansi.Strip(out.String())
+			if !strings.Contains(rendered, tt.want) {
+				t.Fatalf("expected rendered toggle %q in %q", tt.want, rendered)
+			}
+			if strings.Contains(rendered, "[x]") || strings.Contains(rendered, "[-]") || strings.Contains(rendered, "[ ]") {
+				t.Fatalf("rendered old checkbox syntax: %q", rendered)
+			}
+		})
 	}
 }
 
@@ -316,6 +367,26 @@ func TestRunningViewFitsTerminalHeightWithLongLogLines(t *testing.T) {
 
 	if got := lipgloss.Height(m.runningView()); got > m.height {
 		t.Fatalf("running view height = %d, want <= %d", got, m.height)
+	}
+}
+
+func TestRefreshOutputTruncatesLongLogLines(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = []runStep{{
+		name:   "Long output",
+		status: stepOK,
+		output: strings.Repeat("x", 200),
+	}}
+	m.output.SetWidth(40)
+	m.refreshOutput()
+
+	for _, line := range strings.Split(m.output.GetContent(), "\n") {
+		if got := ansi.StringWidth(ansi.Strip(line)); got > m.output.Width() {
+			t.Fatalf("log line width = %d, want <= %d: %q", got, m.output.Width(), line)
+		}
+	}
+	if m.runSteps[0].output != strings.Repeat("x", 200) {
+		t.Fatal("raw step output should remain unmodified")
 	}
 }
 

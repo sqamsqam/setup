@@ -249,7 +249,7 @@ func InitialModelWithMode(dryRun, demo bool) model {
 		demo:         demo,
 		help:         help.New(),
 		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
-		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color("#2E7D6B"))),
+		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color(colorAccent))),
 		confirm:      viewport.New(),
 		steps:        viewport.New(),
 		output:       viewport.New(),
@@ -323,17 +323,8 @@ func (m *model) initInputs() {
 }
 
 func (m model) newPlanList() list.Model {
-	delegate := list.NewDefaultDelegate()
-	delegate.SetSpacing(0)
-	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
-		BorderForeground(lipgloss.Color("#2E7D6B")).
-		Foreground(lipgloss.Color("#F4D35E"))
-	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(lipgloss.Color("#7DCFB6"))
-	delegate.Styles.NormalTitle = delegate.Styles.NormalTitle.Foreground(lipgloss.Color("#E8E8E8"))
-	delegate.Styles.NormalDesc = delegate.Styles.NormalDesc.Foreground(lipgloss.Color("#8A8A8A"))
-
-	l := list.New(m.planItems(), delegate, 80, 18)
-	l.Title = "Setup and management plan"
+	l := list.New(m.planItems(), planDelegate{}, 80, 18)
+	l.Title = "Provisioning plan"
 	l.SetStatusBarItemName("step", "steps")
 	l.DisableQuitKeybindings()
 	l.AdditionalShortHelpKeys = func() []key.Binding {
@@ -359,32 +350,32 @@ func (m model) planItems() []list.Item {
 		m.selections.DevTools.GoVulnCheck && m.selections.DevTools.Pnpm
 
 	return []list.Item{
-		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt upgrade, base packages, SSH hardening, unattended upgrades, Docker"},
-		planItem{itemAddUser, checkbox(m.selections.AddUser, m.selections.AddUser) + " Add User", "Passwordless sudo, SSH public key, linger, and AllowUsers"},
-		planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "Toggle UFW, common firewall rules, fail2ban, Docker logs, diagnostics, and update checks below"},
-		planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, allow detected SSH port, enable UFW"},
-		planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Allow tcp/80 through UFW"},
-		planItem{itemHTTPS, "  " + checkbox(m.selections.FirewallHTTPS, m.selections.FirewallHTTPS) + " Allow HTTPS", "Allow tcp/443 through UFW"},
-		planItem{itemMosh, "  " + checkbox(m.selections.FirewallMosh, m.selections.FirewallMosh) + " Allow Mosh", "Allow udp/60000:61000 through UFW"},
-		planItem{itemFail2Ban, "  " + checkbox(m.selections.Fail2Ban, m.selections.Fail2Ban) + " fail2ban SSH Jail", "Install fail2ban and manage an sshd jail with sane defaults"},
-		planItem{itemDockerLog, "  " + checkbox(m.selections.DockerLogRotation, m.selections.DockerLogRotation) + " Docker Log Rotation", "Configure json-file max-size=10m and max-file=3"},
-		planItem{itemDoctor, "  " + checkbox(m.selections.Diagnostics, m.selections.Diagnostics) + " Doctor Diagnostics", "Read-only LXC/VM, update, service, firewall, SSH, and Docker checks"},
-		planItem{itemUpdates, "  " + checkbox(m.selections.UpdatesCheck, m.selections.UpdatesCheck) + " Update Check", "Refresh apt metadata and list upgradable packages"},
-		planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "Toggle all CLI tools below"},
-		planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "GitHub release .deb, apt fallback only when verification is unavailable"},
-		planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "GitHub release .deb, with Debian fd-find alias handling"},
-		planItem{itemBat, "  " + checkbox(m.selections.Tools.Bat, m.selections.Tools.Bat) + " bat", "GitHub release .deb, with Debian batcat alias handling"},
+		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt, base packages, SSH hardening, unattended upgrades, Docker"},
+		planItem{itemAddUser, checkbox(m.selections.AddUser, m.selections.AddUser) + " Add User", "Passwordless sudo, SSH key, linger, managed AllowUsers"},
+		planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "UFW, common ports, fail2ban, Docker logs, diagnostics, updates"},
+		planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, preserve SSH access"},
+		planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Open tcp/80 through UFW"},
+		planItem{itemHTTPS, "  " + checkbox(m.selections.FirewallHTTPS, m.selections.FirewallHTTPS) + " Allow HTTPS", "Open tcp/443 through UFW"},
+		planItem{itemMosh, "  " + checkbox(m.selections.FirewallMosh, m.selections.FirewallMosh) + " Allow Mosh", "Open udp/60000:61000 through UFW"},
+		planItem{itemFail2Ban, "  " + checkbox(m.selections.Fail2Ban, m.selections.Fail2Ban) + " fail2ban SSH Jail", "Install fail2ban and manage the setup SSH jail"},
+		planItem{itemDockerLog, "  " + checkbox(m.selections.DockerLogRotation, m.selections.DockerLogRotation) + " Docker Log Rotation", "Set json-file max-size=10m and max-file=3"},
+		planItem{itemDoctor, "  " + checkbox(m.selections.Diagnostics, m.selections.Diagnostics) + " Doctor Diagnostics", "Read-only checks for LXC, services, SSH, UFW, Docker"},
+		planItem{itemUpdates, "  " + checkbox(m.selections.UpdatesCheck, m.selections.UpdatesCheck) + " Update Check", "Refresh apt metadata and list available upgrades"},
+		planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "ripgrep, fd, bat, yq, glow, gh"},
+		planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "Verified GitHub release .deb with apt fallback"},
+		planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "Verified release .deb with Debian fd-find alias handling"},
+		planItem{itemBat, "  " + checkbox(m.selections.Tools.Bat, m.selections.Tools.Bat) + " bat", "Verified release .deb with Debian batcat alias handling"},
 		planItem{itemYq, "  " + checkbox(m.selections.Tools.Yq, m.selections.Tools.Yq) + " yq", "Verified linux/amd64 binary from mikefarah/yq"},
-		planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with key fingerprint verification"},
-		planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with key fingerprint verification"},
-		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Toggle Go, Node.js, Rust, and ecosystem tooling below"},
-		planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide install from go.dev with SHA256 verification"},
-		planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, latest Node, corepack, TypeScript, and tsx"},
-		planItem{itemRust, "  " + checkbox(m.selections.DevTools.Rust, m.selections.DevTools.Rust) + " Rust", "Per-user stable Rust toolchain via rustup with rustfmt, clippy, rust-analyzer, rust-src"},
-		planItem{itemGoLint, "  " + checkbox(m.selections.DevTools.GoLint, m.selections.DevTools.GoLint) + " golangci-lint", "Verified release archive installed to /usr/local/bin"},
-		planItem{itemGoRel, "  " + checkbox(m.selections.DevTools.GoReleaser, m.selections.DevTools.GoReleaser) + " GoReleaser", "Verified release archive installed to /usr/local/bin"},
-		planItem{itemGoVuln, "  " + checkbox(m.selections.DevTools.GoVulnCheck, m.selections.DevTools.GoVulnCheck) + " govulncheck", "Official Go vulnerability scanner installed with go install"},
-		planItem{itemPnpm, "  " + checkbox(m.selections.DevTools.Pnpm, m.selections.DevTools.Pnpm) + " pnpm", "Per-user pnpm via Corepack"},
+		planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with fingerprint verification"},
+		planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with fingerprint verification"},
+		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Go, Node.js, Rust, linters, release tooling, pnpm"},
+		planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide go.dev install with SHA256 verification"},
+		planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, Node.js, corepack, TypeScript, tsx"},
+		planItem{itemRust, "  " + checkbox(m.selections.DevTools.Rust, m.selections.DevTools.Rust) + " Rust", "Per-user stable rustup toolchain and components"},
+		planItem{itemGoLint, "  " + checkbox(m.selections.DevTools.GoLint, m.selections.DevTools.GoLint) + " golangci-lint", "Verified release archive to /usr/local/bin"},
+		planItem{itemGoRel, "  " + checkbox(m.selections.DevTools.GoReleaser, m.selections.DevTools.GoReleaser) + " GoReleaser", "Verified release archive to /usr/local/bin"},
+		planItem{itemGoVuln, "  " + checkbox(m.selections.DevTools.GoVulnCheck, m.selections.DevTools.GoVulnCheck) + " govulncheck", "Official Go vulnerability scanner via go install"},
+		planItem{itemPnpm, "  " + checkbox(m.selections.DevTools.Pnpm, m.selections.DevTools.Pnpm) + " pnpm", "Per-user pnpm through Corepack"},
 	}
 }
 

@@ -658,7 +658,7 @@ func (m *model) refreshOutput() {
 		}
 		fmt.Fprintf(&b, "▶ %s\n%s", step.name, strings.TrimSpace(step.output))
 	}
-	m.output.SetContent(colorizeLog(b.String()))
+	m.output.SetContent(colorizeLog(truncateLogLines(b.String(), m.output.Width())))
 	m.output.GotoBottom()
 }
 
