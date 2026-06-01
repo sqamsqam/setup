@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-01
+
 ### Changed
 - Dry-run and demo Ubuntu codename simulation now matches Ubuntu 26.04 `resolute`.
 
