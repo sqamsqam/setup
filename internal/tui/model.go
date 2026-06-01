@@ -143,7 +143,7 @@ type tuiKeys struct {
 }
 
 var keys = tuiKeys{
-	Toggle:   key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
+	Toggle:   key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
 	Select:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
 	Continue: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
 	Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),

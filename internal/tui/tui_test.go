@@ -87,6 +87,24 @@ func TestToggleIndividualTool(t *testing.T) {
 	}
 }
 
+func TestMainMenuSpaceTogglesSelectedPlanItem(t *testing.T) {
+	m := InitialModel(false)
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeySpace, Text: " "}))
+	got := updated.(model)
+	if got.selections.Bootstrap {
+		t.Fatal("expected space to toggle the selected bootstrap item off")
+	}
+
+	item, ok := got.planList.SelectedItem().(planItem)
+	if !ok {
+		t.Fatal("expected selected plan item")
+	}
+	if !strings.HasPrefix(item.Title(), "[ ] System Bootstrap") {
+		t.Fatalf("expected plan list item to render unchecked, got %q", item.Title())
+	}
+}
+
 func TestStartInputFlowDefaultStartsWithTimezone(t *testing.T) {
 	m := InitialModel(false)
 

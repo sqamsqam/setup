@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-06-01
+
+### Fixed
+- TUI plan editing now toggles selected steps when Space is pressed.
+
 ## [0.5.2] - 2026-06-01
 
 ### Changed
@@ -133,6 +138,8 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.5.3]: https://github.com/sqamsqam/setup/releases/tag/v0.5.3
+[0.5.2]: https://github.com/sqamsqam/setup/releases/tag/v0.5.2
 [0.5.1]: https://github.com/sqamsqam/setup/releases/tag/v0.5.1
 [0.5.0]: https://github.com/sqamsqam/setup/releases/tag/v0.5.0
 [0.4.2]: https://github.com/sqamsqam/setup/releases/tag/v0.4.2
