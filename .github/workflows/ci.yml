@@ -46,7 +46,7 @@ jobs:
         run: make plate
 
       - name: Upload visual assets
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: visual-assets
           path: docs/assets
