@@ -4,12 +4,21 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 )
 
 const sudoersFormat = "%s ALL=(ALL) NOPASSWD:ALL\n"
+
+type accountInfo struct {
+	uid   int
+	gid   int
+	home  string
+	shell string
+}
 
 func AddUser(runner setupexec.CmdRunner, username, pubkey string) error {
 	if err := ValidateUsername(username); err != nil {
@@ -19,7 +28,8 @@ func AddUser(runner setupexec.CmdRunner, username, pubkey string) error {
 		return err
 	}
 
-	if err := ensureUser(runner, username); err != nil {
+	acct, err := ensureUser(runner, username)
+	if err != nil {
 		return fmt.Errorf("create user: %w", err)
 	}
 
@@ -40,7 +50,7 @@ func AddUser(runner setupexec.CmdRunner, username, pubkey string) error {
 		return fmt.Errorf("configure sudoers: %w", err)
 	}
 
-	if err := installSSHKey(runner, username, pubkey); err != nil {
+	if err := installSSHKey(runner, username, acct, pubkey); err != nil {
 		return fmt.Errorf("install SSH key: %w", err)
 	}
 
@@ -52,7 +62,7 @@ func AddUser(runner setupexec.CmdRunner, username, pubkey string) error {
 	return nil
 }
 
-func ensureUser(runner setupexec.CmdRunner, username string) error {
+func ensureUser(runner setupexec.CmdRunner, username string) (accountInfo, error) {
 	exists := false
 	_, err := runner.Output("id", username)
 	if err == nil {
@@ -62,12 +72,12 @@ func ensureUser(runner setupexec.CmdRunner, username string) error {
 	if !exists {
 		setupexec.PrintStep(fmt.Sprintf("Creating user %s", username))
 		if err := runner.Run("adduser", "--disabled-password", "--gecos", "", username); err != nil {
-			return err
+			return accountInfo{}, err
 		}
 	} else {
 		setupexec.PrintStep(fmt.Sprintf("User %s already exists, skipping creation", username))
 	}
-	return nil
+	return lookupAccount(runner, username)
 }
 
 func writeSudoers(runner setupexec.CmdRunner, username string) error {
@@ -76,12 +86,14 @@ func writeSudoers(runner setupexec.CmdRunner, username string) error {
 
 	setupexec.PrintStep(fmt.Sprintf("Writing %s", path))
 
-	tmpFile, err := os.CreateTemp("", "setup-sudoers-*")
+	if err := runner.MkdirAll("/etc/sudoers.d", 0755); err != nil {
+		return err
+	}
+
+	tmpPath, err := runner.CreateTemp("/etc/sudoers.d", ".setup-sudoers-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
 	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(content), 0440); err != nil {
@@ -103,24 +115,18 @@ func writeSudoers(runner setupexec.CmdRunner, username string) error {
 	return nil
 }
 
-func installSSHKey(runner setupexec.CmdRunner, username, pubkey string) error {
-	homeDir := "/home/" + username
+func installSSHKey(runner setupexec.CmdRunner, username string, acct accountInfo, pubkey string) error {
+	homeDir := acct.home
 	sshDir := homeDir + "/.ssh"
 	authPath := sshDir + "/authorized_keys"
 
 	setupexec.PrintStep(fmt.Sprintf("Configuring SSH for %s", username))
 
-	// Look up the user's UID/GID for Chown
-	uid, gid, err := runner.LookupUser(username)
-	if err != nil {
-		return fmt.Errorf("lookup user %s: %w", username, err)
-	}
-
 	// Create .ssh directory with correct ownership
 	if err := runner.MkdirAll(sshDir, 0700); err != nil {
 		return fmt.Errorf("create .ssh dir: %w", err)
 	}
-	if err := runner.Chown(sshDir, uid, gid); err != nil {
+	if err := runner.Chown(sshDir, acct.uid, acct.gid); err != nil {
 		return fmt.Errorf("chown .ssh dir: %w", err)
 	}
 
@@ -147,18 +153,16 @@ func installSSHKey(runner setupexec.CmdRunner, username, pubkey string) error {
 	}
 
 	// Write atomically via temp file
-	tmpFile, err := os.CreateTemp("", "setup-authorized-keys-*")
+	tmpPath, err := runner.CreateTemp(sshDir, ".setup-authorized-keys-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
 	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(newData), 0600); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
 	}
-	if err := runner.Chown(tmpPath, uid, gid); err != nil {
+	if err := runner.Chown(tmpPath, acct.uid, acct.gid); err != nil {
 		return fmt.Errorf("chown authorized_keys: %w", err)
 	}
 	if err := runner.Rename(tmpPath, authPath); err != nil {
@@ -179,30 +183,33 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 
 	newContent := "# Managed by setup — do not edit\nAllowUsers " + strings.Join(users, " ") + "\n"
 
-	oldContent, _ := runner.ReadFile(allowFile)
+	oldContent, readErr := runner.ReadFile(allowFile)
 	if bytes.Equal(oldContent, []byte(newContent)) {
 		return nil
 	}
 
-	tmpFile, err := os.CreateTemp("", "setup-allow-users-*")
+	if err := runner.MkdirAll(filepath.Dir(allowFile), 0755); err != nil {
+		return err
+	}
+
+	tmpPath, err := runner.CreateTemp(filepath.Dir(allowFile), ".setup-allow-users-*")
 	if err != nil {
 		return fmt.Errorf("create temp AllowUsers file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
 	defer func() { _ = runner.Remove(tmpPath) }()
 
 	if err := runner.WriteFile(tmpPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("write temp AllowUsers: %w", err)
 	}
 
-	// Validate the new config against the temp file before installing
-	if err := runner.Run("sshd", "-t", "-f", tmpPath); err != nil {
-		return fmt.Errorf("sshd configuration test failed — new AllowUsers config rejected, SSH not restarted")
-	}
-
 	if err := runner.Rename(tmpPath, allowFile); err != nil {
 		return err
+	}
+	if err := runner.Run("sshd", "-t"); err != nil {
+		if rollbackErr := rollbackFile(runner, allowFile, oldContent, readErr == nil, 0644); rollbackErr != nil {
+			return fmt.Errorf("sshd configuration test failed and rollback failed: %w (rollback: %v)", err, rollbackErr)
+		}
+		return fmt.Errorf("sshd configuration test failed; AllowUsers rolled back and SSH not restarted: %w", err)
 	}
 
 	setupexec.PrintStep("Restarting SSH")
@@ -223,4 +230,57 @@ func listNonSystemUsers(runner setupexec.CmdRunner) ([]string, error) {
 		}
 	}
 	return users, nil
+}
+
+func lookupAccount(runner setupexec.CmdRunner, username string) (accountInfo, error) {
+	out, err := runner.Output("getent", "passwd", username)
+	if err != nil {
+		return accountInfo{}, fmt.Errorf("lookup passwd entry for %s: %w", username, err)
+	}
+	parts := strings.Split(out, ":")
+	if len(parts) < 7 || parts[0] != username {
+		return accountInfo{}, fmt.Errorf("invalid passwd entry for %s", username)
+	}
+	uid, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return accountInfo{}, fmt.Errorf("parse uid for %s: %w", username, err)
+	}
+	gid, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return accountInfo{}, fmt.Errorf("parse gid for %s: %w", username, err)
+	}
+	if uid < 1000 {
+		return accountInfo{}, fmt.Errorf("refusing to manage %s: uid %d is below 1000", username, uid)
+	}
+	home := strings.TrimSpace(parts[5])
+	if home == "" || !filepath.IsAbs(home) {
+		return accountInfo{}, fmt.Errorf("refusing to manage %s: invalid home directory %q", username, home)
+	}
+	return accountInfo{uid: uid, gid: gid, home: home, shell: strings.TrimSpace(parts[6])}, nil
+}
+
+func atomicWriteFile(runner setupexec.CmdRunner, path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := runner.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmpPath, err := runner.CreateTemp(dir, ".setup-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = runner.Remove(tmpPath) }()
+	if err := runner.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+	if err := runner.Chmod(tmpPath, perm); err != nil {
+		return err
+	}
+	return runner.Rename(tmpPath, path)
+}
+
+func rollbackFile(runner setupexec.CmdRunner, path string, oldContent []byte, hadOld bool, perm os.FileMode) error {
+	if !hadOld {
+		return runner.Remove(path)
+	}
+	return atomicWriteFile(runner, path, oldContent, perm)
 }

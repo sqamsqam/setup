@@ -10,9 +10,9 @@ interactive terminal UI and a traditional CLI interface.
 - Creates users with sudo access, SSH key authentication, and linger support
 - Installs modern CLI tools: ripgrep, fd, bat, yq, glow, gh
 - Installs Go (system-wide, latest stable)
-- Installs Node.js toolchain per user (fnm, corepack, TypeScript, tsx)
+- Installs Node.js toolchain per user (pinned fnm, corepack, TypeScript, tsx)
 - Supports dry-run mode for safe previews
-- Idempotent — safe to re-run
+- Idempotent where practical — safe to re-run after reviewing partial failures
 
 ## Target environment
 
@@ -63,6 +63,10 @@ steps at any time without restarting.
 
 Add `--dry-run` to preview what would happen without making changes:
 
+```bash
+sudo setup --dry-run
+```
+
 ### CLI mode (scripting / automation)
 
 ```bash
@@ -70,7 +74,7 @@ Add `--dry-run` to preview what would happen without making changes:
 sudo setup bootstrap [--timezone Australia/Sydney]
 
 # Create a sudo user with SSH key authentication
-sudo setup add-user --user <username> --key "<ssh-public-key>"
+sudo setup add-user --user <username> --key-file ~/.ssh/id_ed25519.pub
 
 # Install CLI tools (ripgrep, fd, bat, yq, glow, gh)
 sudo setup install-tools
@@ -79,7 +83,7 @@ sudo setup install-tools
 sudo setup devtools --user <username> [--all] [--go] [--node]
 
 # Run the full provisioning flow in one command
-sudo setup full --user <username> --key "<ssh-public-key>" [--timezone Australia/Sydney]
+sudo setup full --user <username> --key-file ~/.ssh/id_ed25519.pub [--timezone Australia/Sydney]
 
 # Show version
 setup version
@@ -103,8 +107,11 @@ Add `--dry-run` before any CLI command to preview what would be executed
 without making changes:
 
 ```bash
-sudo setup --dry-run full --user dev --key "ssh-ed25519 AAAA..."
+sudo setup --dry-run full --user dev --key-file ~/.ssh/id_ed25519.pub
 ```
+
+Prefer `--key-file` for SSH keys. Inline `--key` is supported, but command
+arguments can be visible to other local processes.
 
 ## Commands reference
 
@@ -112,8 +119,8 @@ sudo setup --dry-run full --user dev --key "ssh-ed25519 AAAA..."
 |---|---|
 | `bootstrap` | Locale, system update, base packages, SSH hardening, unattended upgrades, Docker |
 | `add-user` | Create sudo user, install SSH key, enable linger, update AllowUsers |
-| `install-tools` | ripgrep, fd, bat (GitHub releases), yq (binary), glow (charm.sh apt repo), gh (GitHub CLI apt repo) |
-| `devtools` | Go (system-wide from go.dev), Node.js (per-user via fnm) |
+| `install-tools` | ripgrep, fd, bat (GitHub releases when not already installed), yq (verified binary), glow (charm.sh apt repo), gh (GitHub CLI apt repo) |
+| `devtools` | Go (system-wide from go.dev), Node.js (per-user via pinned fnm) |
 | `full` | Runs bootstrap → add-user → install-tools → devtools |
 | `version` | Prints version and build info |
 
@@ -130,7 +137,7 @@ sudo setup
 # Or non-interactive
 sudo setup full \
   --user dev \
-  --key "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..." \
+  --key-file ~/.ssh/id_ed25519.pub \
   --timezone Australia/Sydney
 ```
 
@@ -142,7 +149,7 @@ This will:
 5. Configure timezone
 6. Harden SSH (pubkey-only, no root login, no passwords)
 7. Lock root password
-8. Install Docker
+8. Install Docker from the official Docker apt repository
 9. Enable and start SSH
 10. Create the specified user with passwordless sudo
 11. Install the user's SSH public key
@@ -151,9 +158,11 @@ This will:
 
 ## Release process
 
-1. Tag a commit: `git tag v0.1.0 && git push origin v0.1.0`
-2. GitHub Actions builds the binary, runs tests, and creates a release
-3. The binary is attached to the release as `setup-linux-amd64`
+1. Move the changelog `(Unreleased)` entries under the new version heading
+2. Open and merge a PR for the changelog/release metadata update
+3. Tag the merged commit: `git tag v0.1.0 && git push origin v0.1.0`
+4. GitHub Actions runs vet, tests, lint, and GoReleaser
+5. The binary is attached to the release as `setup-linux-amd64`
 
 ## Development
 
@@ -192,14 +201,16 @@ internal/
 
 - Password authentication is disabled for SSH after bootstrap
 - Root login over SSH is disabled
-- SSH is only restarted after config validation (`sshd -t` passes)
+- SSH drop-ins are rolled back if effective config validation (`sshd -t`) fails
 - Dry-run mode logs all shell commands without executing them
 - No interactive prompts in CLI mode
 - `DEBIAN_FRONTEND=noninteractive` is set for all apt operations
 - Go downloads are verified against the official SHA256 checksum
-- The Docker install script (`get.docker.com`) and fnm install script
-  (`fnm.vercel.app`) are piped from their official sources — review them
-  if you're running in an untrusted environment
+- Docker is installed through the official apt repository after GPG fingerprint
+  verification
+- fnm is installed from a pinned release zip with SHA256 verification
+- `AllowUsers` is managed from local non-system users (UID >= 1000), so review
+  local account state before running on a reused container
 
 ## Troubleshooting
 
@@ -211,21 +222,22 @@ and re-run the command.
 
 ### Network timeouts during downloads
 
-Some downloads (Go tarball, fnm, Docker script, GitHub releases) may
+Some downloads (Go tarball, fnm, Docker apt packages, GitHub releases) may
 timeout on slow connections. The tool will print the error and exit.
-Re-running is safe — all install steps are idempotent.
+Re-running is safe after reviewing any partial failure.
 
 ### Docker install failure
 
-The Docker install script fetches from `get.docker.com`. If it fails,
-check network connectivity and re-run. Existing Docker state is preserved
-on re-run.
+Docker is installed from `download.docker.com` using the official apt
+repository. If it fails, check network connectivity, apt repository access,
+and the Ubuntu codename reported by `/etc/os-release`.
 
 ### Safe re-run after partial failure
 
-All provisioning steps are idempotent. If a step fails midway, fix the
-underlying issue (e.g. network, disk space) and re-run the same command.
-Already-completed steps will be skipped or produce no changes.
+Provisioning steps are designed to be idempotent where practical. If a step
+fails midway, fix the underlying issue (e.g. network, disk space) and re-run
+the same command. The tool skips many already-completed steps, but installers
+that track upstream releases may still check the network.
 
 ### SSH lockout prevention
 

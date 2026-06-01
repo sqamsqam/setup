@@ -2,7 +2,7 @@ version: 2
 
 builds:
   - id: setup
-    binary: setup
+    binary: setup-linux-amd64
     main: ./cmd/setup
     goos:
       - linux

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/sqamsqam/setup/internal/user"
 )
 
 var (
@@ -74,13 +75,31 @@ func (m model) mainMenuView() string {
 func (m model) inputTimezoneView() string {
 	s := titleStyle.Render("Timezone")
 	s += "\n\n"
-	s += "Enter timezone for " + m.actionLabel() + ":\n\n"
+	s += "Search timezone for " + m.actionLabel() + ":\n\n"
 	s += "  " + cursorStyle.Render(m.timezone)
 	if m.timezone == "" {
 		s += dimStyle.Render(" (UTC)")
 	}
 	s += "\n\n"
-	s += helpStyle.Render("enter confirm · esc back · q quit")
+	if m.timezoneErr != "" {
+		s += errorStyle.Render("  ✗ "+m.timezoneErr) + "\n\n"
+	}
+	matches := m.timezoneMatches
+	if len(matches) == 0 {
+		matches = timezoneMatches(m.timezone, 6)
+	}
+	if len(matches) > 0 {
+		s += dimStyle.Render("Matches:") + "\n"
+		for i, zone := range matches {
+			prefix := "  "
+			if i == m.timezoneCursor {
+				prefix = cursorStyle.Render("► ")
+			}
+			s += prefix + zone + "\n"
+		}
+		s += "\n"
+	}
+	s += helpStyle.Render("type search · ↑/↓ choose · tab fill · enter confirm · esc back · q quit")
 	return s
 }
 
@@ -93,7 +112,7 @@ func (m model) inputUserView() string {
 	}
 	s += "\n"
 	if m.usernameErr != "" {
-		s += errorStyle.Render("  ✗ " + m.usernameErr) + "\n"
+		s += errorStyle.Render("  ✗ "+m.usernameErr) + "\n"
 	}
 	s += "\n"
 	s += helpStyle.Render("enter confirm · esc back · q quit")
@@ -109,9 +128,11 @@ func (m model) inputKeyView() string {
 		display = dimStyle.Render("(paste your public key)")
 	}
 
-	s += "Key: " + truncateKey(display, 40)
+	s += "Key: " + truncateKey(display, maxPreviewWidth(m.width))
 	if m.sshKeyErr != "" {
-		s += "\n" + errorStyle.Render("  ✗ " + m.sshKeyErr)
+		s += "\n" + errorStyle.Render("  ✗ "+m.sshKeyErr)
+	} else if m.sshKey != "" {
+		s += "\n" + dimStyle.Render("  "+user.SSHKeySummary(m.sshKey))
 	}
 	s += "\n\n"
 	s += helpStyle.Render("paste key, then press enter · esc back · q quit")
@@ -153,11 +174,15 @@ func (m model) confirmView() string {
 	case actionBootstrap:
 		s.WriteString("  • Configure locale, base packages, SSH hardening\n")
 		s.WriteString("  • Set up unattended security upgrades\n")
-		s.WriteString("  • Install Docker\n")
+		s.WriteString("  • Install Docker from the official apt repository\n")
+		s.WriteString("\nAccess changes:\n")
+		s.WriteString("  • Disable root/password SSH and lock the root password\n")
 	case actionAddUser:
 		s.WriteString("  • Create user account with passwordless sudo\n")
 		s.WriteString("  • Install SSH public key\n")
 		s.WriteString("  • Update SSH AllowUsers\n")
+		s.WriteString("\nAccess changes:\n")
+		s.WriteString("  • Grant passwordless sudo and restrict SSH to allowed users\n")
 	case actionInstallTools:
 		s.WriteString("  • Install ripgrep, fd, bat, yq, glow, gh\n")
 	case actionInstallDevTools:
@@ -173,7 +198,7 @@ func (m model) confirmView() string {
 		fmt.Fprintf(&s, "  Username: %s\n", m.username)
 	}
 	if effAct == actionAddUser && m.sshKey != "" {
-		fmt.Fprintf(&s, "  SSH key: %s...\n", truncateKey(m.sshKey, 40))
+		fmt.Fprintf(&s, "  SSH key: %s\n", user.SSHKeySummary(m.sshKey))
 	}
 
 	if m.dryRun {
@@ -219,6 +244,9 @@ func (m model) runningView() string {
 				}
 			}
 			s.WriteString(line + "\n")
+			if step.status == stepOK && step.output != "" {
+				s.WriteString(dimStyle.Render(indentLines(truncateOutput(step.output, 1800), "      ")) + "\n")
+			}
 		}
 
 		s.WriteString("\n")
@@ -289,9 +317,15 @@ func (m model) doneView() string {
 			}
 			if allOK {
 				s.WriteString(successStyle.Render("All steps completed successfully."))
+			} else {
+				s.WriteString(errorStyle.Render("Full setup stopped after a failed step."))
 			}
 			s.WriteString("\n\n")
 			s.WriteString(helpStyle.Render("enter back to menu · q quit"))
+		} else if m.steps[m.runningStepIndex()].status == stepFail {
+			s.WriteString(errorStyle.Render("This step failed. Fix the issue or retry before continuing."))
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("enter retry · esc back to menu · q quit"))
 		} else {
 			nextAct := fullSetupChain[m.chainIdx+1]
 			fmt.Fprintf(&s, "Next: %s\n\n", stepNames[nextAct])
@@ -319,6 +353,9 @@ func (m model) doneView() string {
 				line = errorStyle.Render(line + " — " + step.output)
 			}
 			s.WriteString(line + "\n")
+			if step.status == stepOK && step.output != "" {
+				s.WriteString(dimStyle.Render(indentLines(truncateOutput(step.output, 1800), "      ")) + "\n")
+			}
 		}
 
 		s.WriteString("\n")
@@ -344,5 +381,37 @@ func truncateKey(key string, max int) string {
 	if len(key) <= max {
 		return key
 	}
-	return key[:max]
+	if max <= 1 {
+		return key[:max]
+	}
+	if max <= 3 {
+		return key[:max]
+	}
+	return key[:max-3] + "..."
+}
+
+func maxPreviewWidth(width int) int {
+	if width <= 0 {
+		return 72
+	}
+	if width < 50 {
+		return 32
+	}
+	return min(width-10, 96)
+}
+
+func truncateOutput(output string, max int) string {
+	output = strings.TrimSpace(output)
+	if len(output) <= max {
+		return output
+	}
+	return output[:max] + "\n..."
+}
+
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }

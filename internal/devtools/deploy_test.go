@@ -152,3 +152,30 @@ func TestDetectShellCustomCheck(t *testing.T) {
 		t.Errorf("expected zsh, got: %s", shell)
 	}
 }
+
+func TestValidateTargetUserRejectsRoot(t *testing.T) {
+	runner := &mockRunner{
+		outputFunc: func(name string, args ...string) (string, error) {
+			return "root:x:0:0:root:/root:/bin/bash", nil
+		},
+	}
+	_, err := validateTargetUser(runner, "root")
+	if err == nil {
+		t.Fatal("expected root validation error")
+	}
+}
+
+func TestValidateTargetUserUsesPasswdHome(t *testing.T) {
+	runner := &mockRunner{
+		outputFunc: func(name string, args ...string) (string, error) {
+			return "dev:x:1000:1000:Dev:/srv/dev:/bin/bash", nil
+		},
+	}
+	got, err := validateTargetUser(runner, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.home != "/srv/dev" {
+		t.Fatalf("expected /srv/dev, got %q", got.home)
+	}
+}

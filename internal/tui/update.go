@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +32,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinnerFrame++
 		if m.screen == screenRunning {
 			return m, tickSpinner()
+		}
+		return m, nil
+
+	case tea.PasteMsg:
+		if m.screen == screenInputKey {
+			m.sshKey = normalizeSSHKeyInput(m.sshKey + " " + msg.String())
+			m.sshKeyErr = ""
 		}
 		return m, nil
 
@@ -103,17 +115,47 @@ func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "enter":
+		m.timezoneErr = ""
+		if strings.TrimSpace(m.timezone) == "" {
+			m.timezone = "UTC"
+			m.goNext()
+			return m, nil
+		}
+		if err := validateTimezone(m.timezone); err != nil {
+			m.timezoneErr = err.Error()
+			m.refreshTimezoneMatches()
+			return m, nil
+		}
 		m.goNext()
 	case "esc":
+		m.timezoneErr = ""
 		m.goBack()
+	case "up", "k":
+		if m.timezoneCursor > 0 {
+			m.timezoneCursor--
+			m.timezone = m.timezoneMatches[m.timezoneCursor]
+		}
+	case "down", "j":
+		if m.timezoneCursor < len(m.timezoneMatches)-1 {
+			m.timezoneCursor++
+			m.timezone = m.timezoneMatches[m.timezoneCursor]
+		}
+	case "tab":
+		if len(m.timezoneMatches) > 0 {
+			m.timezone = m.timezoneMatches[m.timezoneCursor]
+		}
 	case "backspace":
 		if len(m.timezone) > 0 {
 			m.timezone = m.timezone[:len(m.timezone)-1]
 		}
+		m.timezoneErr = ""
+		m.refreshTimezoneMatches()
 	default:
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
 			m.timezone += s
+			m.timezoneErr = ""
+			m.refreshTimezoneMatches()
 		}
 	}
 	return m, nil
@@ -126,13 +168,11 @@ func (m model) updateInputUser(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.usernameErr = ""
-		if len(m.username) > 0 {
-			if err := user.ValidateUsername(m.username); err != nil {
-				m.usernameErr = err.Error()
-				return m, nil
-			}
-			m.goNext()
+		if err := user.ValidateUsername(m.username); err != nil {
+			m.usernameErr = err.Error()
+			return m, nil
 		}
+		m.goNext()
 	case "esc":
 		m.usernameErr = ""
 		m.goBack()
@@ -158,13 +198,12 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.sshKeyErr = ""
-		if len(m.sshKey) > 0 {
-			if err := user.ValidateSSHKey(m.sshKey); err != nil {
-				m.sshKeyErr = err.Error()
-				return m, nil
-			}
-			m.goNext()
+		m.sshKey = normalizeSSHKeyInput(m.sshKey)
+		if err := user.ValidateSSHKey(m.sshKey); err != nil {
+			m.sshKeyErr = err.Error()
+			return m, nil
 		}
+		m.goNext()
 	case "esc":
 		m.sshKeyErr = ""
 		m.goBack()
@@ -177,6 +216,8 @@ func (m model) updateInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 && s[0] < 127 {
 			m.sshKey += s
+		} else if strings.Contains(s, "ssh-") || strings.Contains(s, "ecdsa-") || strings.Contains(s, "sk-") {
+			m.sshKey = normalizeSSHKeyInput(m.sshKey + " " + s)
 		}
 		m.sshKeyErr = ""
 	}
@@ -207,6 +248,12 @@ func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key == "enter" {
+		if m.isChain() && m.steps[m.runningStepIndex()].status == stepFail {
+			m.screen = screenRunning
+			m.steps[m.runningStepIndex()].status = stepRunning
+			m.steps[m.runningStepIndex()].output = ""
+			return m, tea.Batch(runProvisioningStep(m), tickSpinner())
+		}
 		if m.isChain() && m.chainIdx < len(fullSetupChain)-1 {
 			m.chainIdx++
 			m.spinnerFrame = 0
@@ -224,4 +271,84 @@ func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func normalizeSSHKeyInput(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func (m *model) refreshTimezoneMatches() {
+	m.timezoneMatches = timezoneMatches(m.timezone, 6)
+	m.timezoneCursor = 0
+}
+
+func timezoneMatches(query string, limit int) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	zones := availableTimezones()
+	if query == "" {
+		defaults := []string{"UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Europe/London"}
+		if limit > len(defaults) {
+			limit = len(defaults)
+		}
+		return defaults[:limit]
+	}
+	var matches []string
+	for _, zone := range zones {
+		if strings.Contains(strings.ToLower(zone), query) {
+			matches = append(matches, zone)
+			if len(matches) >= limit {
+				break
+			}
+		}
+	}
+	return matches
+}
+
+func validateTimezone(tz string) error {
+	tz = strings.TrimSpace(tz)
+	if tz == "UTC" {
+		return nil
+	}
+	for _, zone := range availableTimezones() {
+		if zone == tz {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown timezone %q", tz)
+}
+
+func availableTimezones() []string {
+	var zones []string
+	root := "/usr/share/zoneinfo"
+	skipDirs := map[string]bool{
+		"posix": true, "right": true, "Etc": false,
+	}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipDirs[rel] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.Contains(rel, ".") || strings.HasPrefix(rel, "leap-seconds") || strings.HasPrefix(rel, "tzdata") || strings.HasPrefix(rel, "localtime") {
+			return nil
+		}
+		zones = append(zones, filepath.ToSlash(rel))
+		return nil
+	})
+	if len(zones) == 0 {
+		return []string{"UTC"}
+	}
+	sort.Strings(zones)
+	return zones
 }

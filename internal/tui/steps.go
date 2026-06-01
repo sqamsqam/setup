@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"bytes"
 	"io"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
-	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/devtools"
+	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/system"
 	"github.com/sqamsqam/setup/internal/tools"
 	"github.com/sqamsqam/setup/internal/user"
@@ -26,6 +28,11 @@ func newWizardRunner(dryRun bool) setupexec.CmdRunner {
 func runProvisioningStep(m model) tea.Cmd {
 	return func() tea.Msg {
 		runner := newWizardRunner(m.dryRun)
+		var dryBuf *bytes.Buffer
+		if dr, ok := runner.(*setupexec.DryRunner); ok {
+			dryBuf = &bytes.Buffer{}
+			dr.Stdout = dryBuf
+		}
 		act := m.effectiveAction()
 		stepIdx := m.runningStepIndex()
 
@@ -42,7 +49,11 @@ func runProvisioningStep(m model) tea.Cmd {
 		}
 
 		if m.dryRun && err == nil {
-			return stepStatusMsg{index: stepIdx, status: stepOK, output: "(dry run)"}
+			output := "(dry run)"
+			if dryBuf != nil && strings.TrimSpace(dryBuf.String()) != "" {
+				output = dryBuf.String()
+			}
+			return stepStatusMsg{index: stepIdx, status: stepOK, output: output}
 		}
 		if err != nil {
 			return stepStatusMsg{index: stepIdx, status: stepFail, output: err.Error()}

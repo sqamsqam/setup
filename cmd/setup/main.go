@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/sqamsqam/setup/internal/cli"
 	"github.com/sqamsqam/setup/internal/tui"
@@ -24,9 +23,12 @@ func main() {
 	dryRun := false
 	cleanArgs := make([]string, 0, len(args))
 	for _, a := range args {
-		if a == "--dry-run" {
+		switch a {
+		case "--dry-run", "--dry-run=true":
 			dryRun = true
-		} else {
+		case "--dry-run=false":
+			dryRun = false
+		default:
 			cleanArgs = append(cleanArgs, a)
 		}
 	}
@@ -47,18 +49,7 @@ func main() {
 }
 
 func isTUI(args []string) bool {
-	if len(args) == 0 {
-		return true
-	}
-	first := args[0]
-	if strings.HasPrefix(first, "-") {
-		return false
-	}
-	switch first {
-	case "bootstrap", "add-user", "install-tools", "devtools", "full", "version":
-		return false
-	}
-	return true
+	return len(args) == 0
 }
 
 func isRoot() bool {

@@ -44,8 +44,11 @@ func TestInstallYqWithDryRunner(t *testing.T) {
 	}
 
 	output := buf.String()
-	if output != "" {
-		t.Errorf("expected no output for dry-run short-circuit, got: %q", output)
+	if !strings.Contains(output, "yq_linux_amd64") {
+		t.Errorf("expected yq download in dry-run output, got: %q", output)
+	}
+	if !strings.Contains(output, "checksums") {
+		t.Errorf("expected yq checksum download in dry-run output, got: %q", output)
 	}
 }
 
@@ -69,14 +72,14 @@ func TestInstallGitHubDebDryRunShortCircuit(t *testing.T) {
 
 	setupexec.SetPrintWriter(io.Discard)
 
-	err := installGitHubDeb(runner, "BurntSushi/ripgrep", `ripgrep_.*_amd64\.deb$`)
+	err := installGitHubDeb(runner, "ripgrep", "ripgrep", "BurntSushi/ripgrep", `ripgrep_.*_amd64\.deb$`)
 	if err != nil {
 		t.Fatalf("installGitHubDeb with dry runner returned error: %v", err)
 	}
 
 	output := buf.String()
-	if output != "" {
-		t.Errorf("expected empty output for dry-run short-circuit, got: %q", output)
+	if !strings.Contains(output, "apt install -y ripgrep") {
+		t.Errorf("expected dry-run package install, got: %q", output)
 	}
 }
 
@@ -97,5 +100,18 @@ func TestEnsureDepsWithDryRunner(t *testing.T) {
 	}
 	if !strings.Contains(output, "apt install") {
 		t.Error("expected apt install in output")
+	}
+}
+
+func TestChecksumForAsset(t *testing.T) {
+	order := "CRC32\nSHA-1\nSHA-256\n"
+	checksums := "yq_linux_amd64 deadbeef abcdef 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"
+	got, err := checksumForAsset(checksums, order, "yq_linux_amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if got != want {
+		t.Fatalf("checksumForAsset = %q, want %q", got, want)
 	}
 }

@@ -69,6 +69,9 @@ func TestHelpOutput(t *testing.T) {
 	if !strings.Contains(buf.String(), "USAGE:") {
 		t.Errorf("expected help output, got: %s", buf.String())
 	}
+	if !strings.Contains(buf.String(), "dry-run") {
+		t.Errorf("expected global dry-run flag in help, got: %s", buf.String())
+	}
 }
 
 func TestRunBootstrap(t *testing.T) {
@@ -246,6 +249,33 @@ func TestRunAddUserMissingKey(t *testing.T) {
 	err := app.Run(context.Background(), []string{"setup", "add-user", "--user", "test"})
 	if err == nil {
 		t.Fatal("expected error for missing key")
+	}
+}
+
+func TestRunAddUserRejectsKeyAndKeyFile(t *testing.T) {
+	keyFile, err := os.CreateTemp(t.TempDir(), "key-*.pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keyFile.WriteString("ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="); err != nil {
+		t.Fatal(err)
+	}
+	if err := keyFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	app := BuildApp(false, nil)
+	err = app.Run(context.Background(), []string{
+		"setup", "add-user",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+		"--key-file", keyFile.Name(),
+	})
+	if err == nil {
+		t.Fatal("expected error for conflicting key inputs")
+	}
+	if !strings.Contains(err.Error(), "either --key or --key-file") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

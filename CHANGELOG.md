@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+- Searchable timezone selection and validation in the TUI
+- TUI dry-run transcripts for provisioning steps
+
+### Changed
+- Docker installation now uses the official apt repository with GPG fingerprint verification instead of `get.docker.com`
+- fnm installation now uses a pinned release zip with SHA256 verification instead of piping a remote install script
+- TUI Full Setup now blocks continuation after failed steps and offers retry
+- CLI examples and docs now prefer `--key-file` for SSH public keys
+- Release workflow now runs lint and emits the documented `setup-linux-amd64` binary name
+
+### Fixed
+- SSH public key paste handling in the TUI
+- CLI tool installation no longer attempts GitHub `.deb` downgrades when the distro package is already installed
+- SSH drop-in validation now checks effective sshd config and rolls back failed candidates
+- Existing users are validated as non-system accounts and their passwd home directory is used for SSH keys
+- Unknown CLI commands now fail instead of opening the TUI
+
+### Security
+- Downloaded binaries are verified before replacing live executables
+- Checksum verification fails closed for GitHub `.deb` installs
+- Shell-interpolated checksum verification was replaced with Go SHA256 checks
+
 ## [0.3.0] - 2026-05-31
 
 ### Added

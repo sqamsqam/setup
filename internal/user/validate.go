@@ -1,6 +1,7 @@
 package user
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"regexp"
@@ -76,4 +77,21 @@ func ValidateSSHKey(key string) error {
 		return fmt.Errorf("SSH public key data is too short (%d bytes, minimum 16)", len(decoded))
 	}
 	return nil
+}
+
+func SSHKeySummary(key string) string {
+	fields := strings.Fields(strings.TrimSpace(key))
+	if len(fields) < 2 {
+		return strings.TrimSpace(key)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(fields[1])
+	if err != nil {
+		return fields[0]
+	}
+	sum := sha256.Sum256(decoded)
+	fingerprint := base64.RawStdEncoding.EncodeToString(sum[:])
+	if len(fields) > 2 {
+		return fmt.Sprintf("%s SHA256:%s %s", fields[0], fingerprint, strings.Join(fields[2:], " "))
+	}
+	return fmt.Sprintf("%s SHA256:%s", fields[0], fingerprint)
 }

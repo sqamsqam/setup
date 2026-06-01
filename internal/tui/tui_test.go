@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestInitialModel(t *testing.T) {
@@ -289,8 +291,8 @@ func TestTruncateKey(t *testing.T) {
 	if len(got) != 40 {
 		t.Errorf("expected truncated key length 40, got: %d", len(got))
 	}
-	if got != long[:40] {
-		t.Errorf("expected first 40 chars, got: %q", got)
+	if got != long[:37]+"..." {
+		t.Errorf("expected truncated preview with ellipsis, got: %q", got)
 	}
 }
 
@@ -318,6 +320,66 @@ func TestStatusIcon(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("statusIcon(%v) = %q, want %q", tt.status, got, tt.want)
 		}
+	}
+}
+
+func TestPasteSSHKey(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputKey
+	msg := tea.PasteMsg{Content: "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo= pasted@example\n"}
+
+	updated, _ := m.Update(msg)
+	got := updated.(model)
+	if got.sshKey != "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo= pasted@example" {
+		t.Fatalf("unexpected pasted key: %q", got.sshKey)
+	}
+}
+
+func TestEmptyUsernameShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputUser
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.usernameErr == "" {
+		t.Fatal("expected username error")
+	}
+	if got.screen != screenInputUser {
+		t.Fatalf("expected to stay on username screen, got %d", got.screen)
+	}
+}
+
+func TestBlankTimezoneDefaultsToUTC(t *testing.T) {
+	m := InitialModel(false)
+	m.action = actionBootstrap
+	m.screen = screenInputTimezone
+	m.timezone = ""
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.timezone != "UTC" {
+		t.Fatalf("expected UTC, got %q", got.timezone)
+	}
+	if got.screen != screenConfirm {
+		t.Fatalf("expected confirm screen, got %d", got.screen)
+	}
+}
+
+func TestFailedChainStepRetriesInsteadOfAdvancing(t *testing.T) {
+	m := InitialModel(false)
+	m.action = actionFullSetup
+	m.chainIdx = 0
+	m.screen = screenDone
+	m.buildSteps()
+	m.steps[0].status = stepFail
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.chainIdx != 0 {
+		t.Fatalf("expected chain index to stay at 0, got %d", got.chainIdx)
+	}
+	if got.screen != screenRunning {
+		t.Fatalf("expected retry to enter running screen, got %d", got.screen)
 	}
 }
 

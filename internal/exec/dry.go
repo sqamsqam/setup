@@ -36,10 +36,20 @@ func (d *DryRunner) Output(name string, args ...string) (string, error) {
 		}
 	case "getent":
 		if len(args) > 0 && args[0] == "passwd" {
-			return "user:x:1000:1000:User:/home/user:/bin/bash", nil
+			username := "user"
+			if len(args) > 1 && args[1] != "" {
+				username = args[1]
+			}
+			return username + ":x:1000:1000:User:/home/" + username + ":/bin/bash", nil
 		}
 	case "id":
 		return "uid=1000(user) gid=1000(user) groups=1000(user)", nil
+	case "awk":
+		return "user", nil
+	case "bash":
+		if len(args) >= 2 && strings.Contains(args[1], "VERSION_CODENAME") {
+			return "plucky", nil
+		}
 	}
 
 	return "", nil
@@ -64,6 +74,12 @@ func (d *DryRunner) WriteFile(path string, data []byte, perm os.FileMode) error 
 func (d *DryRunner) ReadFile(path string) ([]byte, error) {
 	d.log("ReadFile(" + path + ")")
 	return nil, nil
+}
+
+func (d *DryRunner) CreateTemp(dir, pattern string) (string, error) {
+	path := strings.TrimRight(dir, "/") + "/.setup-dry-run-" + strings.Trim(pattern, "*")
+	d.log("CreateTemp(" + dir + ", " + pattern + ") -> " + path)
+	return path, nil
 }
 
 func (d *DryRunner) Rename(oldpath, newpath string) error {
