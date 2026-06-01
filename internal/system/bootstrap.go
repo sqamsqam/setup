@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
@@ -82,18 +83,7 @@ APT::Periodic::Unattended-Upgrade "1";
 		return nil
 	}
 
-	tmpFile, err := os.CreateTemp("", "setup-auto-upgrades-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	defer func() { _ = runner.Remove(tmpPath) }()
-
-	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return err
-	}
-	return runner.Rename(tmpPath, autoUpgradesConfig)
+	return atomicWriteFile(runner, autoUpgradesConfig, []byte(content), 0644)
 }
 
 func setTimezone(runner setupexec.CmdRunner, tz string) error {
@@ -115,18 +105,6 @@ ClientAliveCountMax 2
 MaxSessions 10
 MaxStartups 10:30:100
 `
-	tmpFile, err := os.CreateTemp("", "setup-99-hardening-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	defer func() { _ = runner.Remove(tmpPath) }()
-
-	if err := runner.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return err
-	}
-
 	if err := runner.MkdirAll("/etc/ssh/sshd_config.d", 0755); err != nil {
 		return err
 	}
@@ -139,12 +117,7 @@ MaxStartups 10:30:100
 		return nil
 	}
 
-	// Validate the new config against the temp file before installing
-	if err := runner.Run("sshd", "-t", "-f", tmpPath); err != nil {
-		return fmt.Errorf("sshd configuration test failed — new hardening config rejected, SSH not restarted")
-	}
-
-	if err := runner.Rename(tmpPath, sshdHardeningConfig); err != nil {
+	if err := installSSHDropIn(runner, sshdHardeningConfig, newContent); err != nil {
 		return err
 	}
 
@@ -161,9 +134,124 @@ func lockRootPassword(runner setupexec.CmdRunner) error {
 }
 
 func installDocker(runner setupexec.CmdRunner) error {
-	return runner.Shell("set -euo pipefail; curl -fsSL https://get.docker.com | sh")
+	keyringPath := "/etc/apt/keyrings/docker.asc"
+	sourcePath := "/etc/apt/sources.list.d/docker.sources"
+
+	if err := runner.MkdirAll("/etc/apt/keyrings", 0755); err != nil {
+		return err
+	}
+
+	keyTmp, err := runner.CreateTemp("/etc/apt/keyrings", ".setup-docker-*.asc")
+	if err != nil {
+		return fmt.Errorf("create temp Docker keyring: %w", err)
+	}
+	defer func() { _ = runner.Remove(keyTmp) }()
+
+	if err := runner.Run("curl", "-fsSL", "https://download.docker.com/linux/ubuntu/gpg", "-o", keyTmp); err != nil {
+		return fmt.Errorf("download Docker GPG key: %w", err)
+	}
+	if !setupexec.IsDryRun(runner) {
+		const dockerFingerprint = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+		if err := verifyGPGFingerprint(runner, keyTmp, dockerFingerprint); err != nil {
+			return fmt.Errorf("verify Docker GPG key: %w", err)
+		}
+	}
+	if err := runner.Chmod(keyTmp, 0644); err != nil {
+		return err
+	}
+	if err := runner.Rename(keyTmp, keyringPath); err != nil {
+		return err
+	}
+
+	arch, err := runner.Output("dpkg", "--print-architecture")
+	if err != nil {
+		return fmt.Errorf("get architecture: %w", err)
+	}
+	codename, err := runner.Output("bash", "-c", `. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}"`)
+	if err != nil {
+		return fmt.Errorf("get Ubuntu codename: %w", err)
+	}
+	if strings.TrimSpace(codename) == "" {
+		return fmt.Errorf("ubuntu codename is empty")
+	}
+
+	sourceContent := fmt.Sprintf(`Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: %s
+Components: stable
+Architectures: %s
+Signed-By: %s
+`, strings.TrimSpace(codename), strings.TrimSpace(arch), keyringPath)
+
+	if err := atomicWriteFile(runner, sourcePath, []byte(sourceContent), 0644); err != nil {
+		return fmt.Errorf("write Docker apt source: %w", err)
+	}
+	if err := runner.Run("apt", "update"); err != nil {
+		return err
+	}
+	return runner.Run("apt", "install", "-y", "docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin")
 }
 
 func startSSH(runner setupexec.CmdRunner) error {
 	return runner.Run("systemctl", "enable", "--now", "ssh")
+}
+
+func atomicWriteFile(runner setupexec.CmdRunner, path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := runner.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmpPath, err := runner.CreateTemp(dir, ".setup-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = runner.Remove(tmpPath) }()
+
+	if err := runner.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+	if err := runner.Chmod(tmpPath, perm); err != nil {
+		return err
+	}
+	return runner.Rename(tmpPath, path)
+}
+
+func installSSHDropIn(runner setupexec.CmdRunner, path string, data []byte) error {
+	oldContent, readErr := runner.ReadFile(path)
+	hadOld := readErr == nil
+
+	if err := atomicWriteFile(runner, path, data, 0644); err != nil {
+		return err
+	}
+	if err := runner.Run("sshd", "-t"); err != nil {
+		if rollbackErr := rollbackFile(runner, path, oldContent, hadOld, 0644); rollbackErr != nil {
+			return fmt.Errorf("sshd configuration test failed and rollback failed: %w (rollback: %v)", err, rollbackErr)
+		}
+		return fmt.Errorf("sshd configuration test failed; candidate rolled back and SSH not restarted: %w", err)
+	}
+	return nil
+}
+
+func rollbackFile(runner setupexec.CmdRunner, path string, oldContent []byte, hadOld bool, perm os.FileMode) error {
+	if !hadOld {
+		return runner.Remove(path)
+	}
+	return atomicWriteFile(runner, path, oldContent, perm)
+}
+
+func verifyGPGFingerprint(runner setupexec.CmdRunner, keyPath, expected string) error {
+	out, err := runner.Output("gpg", "--show-keys", "--with-fingerprint", "--with-colons", keyPath)
+	if err != nil {
+		return err
+	}
+	normalizedExpected := strings.ReplaceAll(expected, " ", "")
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "fpr:") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 10 && parts[9] == normalizedExpected {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("fingerprint mismatch for %s", keyPath)
 }

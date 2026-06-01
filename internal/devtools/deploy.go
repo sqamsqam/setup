@@ -1,12 +1,17 @@
 package devtools
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	setupuser "github.com/sqamsqam/setup/internal/user"
 )
 
 // Pinned Go version and SHA256 for deterministic, secure installation.
@@ -15,6 +20,11 @@ import (
 var (
 	pinnedGoVersion = ""
 	pinnedGoSHA256  = ""
+)
+
+const (
+	fnmVersion = "v1.39.0"
+	fnmSHA256  = "7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224"
 )
 
 func InstallGo(runner setupexec.CmdRunner) error {
@@ -82,8 +92,8 @@ func InstallGo(runner setupexec.CmdRunner) error {
 	}
 
 	setupexec.PrintStep("Verifying checksum")
-	if err := runner.Shell(fmt.Sprintf("echo '%s  %s' | sha256sum -c --status", sha256, tmpTarball)); err != nil {
-		return fmt.Errorf("go checksum verification failed")
+	if err := verifySHA256File(runner, tmpTarball, sha256); err != nil {
+		return fmt.Errorf("go checksum verification failed: %w", err)
 	}
 
 	if err := runner.RemoveAll("/usr/local/go"); err != nil {
@@ -95,12 +105,10 @@ func InstallGo(runner setupexec.CmdRunner) error {
 
 	profileContent := "# Managed by setup — do not edit\n"
 	profileContent += "export PATH=\"/usr/local/go/bin:$PATH\"\n"
-	tmpFile2, err := os.CreateTemp("", "setup-go-profile-*.sh")
+	tmpProfile, err := runner.CreateTemp("/etc/profile.d", ".setup-go-profile-*.sh")
 	if err != nil {
 		return fmt.Errorf("create temp profile: %w", err)
 	}
-	tmpProfile := tmpFile2.Name()
-	_ = tmpFile2.Close()
 	defer func() { _ = runner.Remove(tmpProfile) }()
 
 	if err := runner.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
@@ -156,25 +164,32 @@ func parseGoRelease(jsonData string) (version string, sha256 string, err error) 
 }
 
 func InstallNode(runner setupexec.CmdRunner, username string) error {
-	if setupexec.IsDryRun(runner) {
-		setupexec.PrintStep(fmt.Sprintf("Would install Node.js toolchain for %s", username))
-		setupexec.PrintDone("Node.js installation skipped (dry-run)")
-		return nil
+	if _, err := validateTargetUser(runner, username); err != nil {
+		return err
 	}
 
 	setupexec.PrintStep(fmt.Sprintf("Installing Node.js toolchain for %s", username))
 
 	shellName := detectShell(runner, username)
+	if err := runner.Run("apt", "install", "-y", "curl", "unzip", "ca-certificates"); err != nil {
+		return err
+	}
 
 	script := strings.TrimSpace(fmt.Sprintf(`
 set -euo pipefail
-export PATH="$HOME/.local/share/fnm:$PATH"
-
-if [[ ! -d "$HOME/.local/share/fnm" ]]; then
-  curl -fsSL https://fnm.vercel.app/install | %s
-fi
-
 export FNM_DIR="$HOME/.local/share/fnm"
+export PATH="$FNM_DIR:$PATH"
+
+mkdir -p "$FNM_DIR"
+
+if [[ ! -x "$FNM_DIR/fnm" ]]; then
+  tmp_zip="$(mktemp)"
+  trap 'rm -f "$tmp_zip"' EXIT
+  curl -fsSL "https://github.com/Schniz/fnm/releases/download/%s/fnm-linux.zip" -o "$tmp_zip"
+  echo "%s  $tmp_zip" | sha256sum -c --status
+  unzip -oq "$tmp_zip" -d "$FNM_DIR"
+  chmod 0755 "$FNM_DIR/fnm"
+fi
 
 if [[ ! -x "$FNM_DIR/fnm" ]]; then
   echo "ERROR: fnm binary not found at $FNM_DIR/fnm" >&2
@@ -182,6 +197,20 @@ if [[ ! -x "$FNM_DIR/fnm" ]]; then
 fi
 
 eval "$("$FNM_DIR/fnm" env --shell %s)"
+
+profile_file="$HOME/.bashrc"
+if [[ "%s" == "zsh" ]]; then
+  profile_file="$HOME/.zshrc"
+fi
+if ! grep -Fq "# Managed by setup - fnm" "$profile_file" 2>/dev/null; then
+  cat >>"$profile_file" <<'EOF'
+
+# Managed by setup - fnm
+export FNM_DIR="$HOME/.local/share/fnm"
+export PATH="$FNM_DIR:$PATH"
+eval "$("$FNM_DIR/fnm" env --shell %s)"
+EOF
+fi
 
 fnm install --latest
 fnm use latest
@@ -197,14 +226,13 @@ corepack enable
 npm install -g typescript tsx
 
 echo "Node.js toolchain installed for $(whoami)."
-`, shellName, shellName))
+`, fnmVersion, fnmSHA256, shellName, shellName, shellName))
 
 	sudoArgs := []string{"-iu", username, "--", shellName, "-c", script}
 	setupexec.PrintStep("Installing fnm and Node.js (this may take a few minutes)")
 	if err := runner.Run("sudo", sudoArgs...); err != nil {
 		return fmt.Errorf("install Node toolchain: %w", err)
 	}
-
 	setupexec.PrintDone(fmt.Sprintf("Node.js toolchain installed for %s", username))
 	return nil
 }
@@ -238,3 +266,55 @@ func InstallAllDevTools(runner setupexec.CmdRunner, username string) error {
 	return nil
 }
 
+type targetUser struct {
+	uid  int
+	gid  int
+	home string
+}
+
+func validateTargetUser(runner setupexec.CmdRunner, username string) (targetUser, error) {
+	if err := setupuser.ValidateUsername(username); err != nil {
+		return targetUser{}, err
+	}
+	out, err := runner.Output("getent", "passwd", username)
+	if err != nil {
+		return targetUser{}, fmt.Errorf("lookup passwd entry for %s: %w", username, err)
+	}
+	parts := strings.Split(out, ":")
+	if len(parts) < 7 || parts[0] != username {
+		return targetUser{}, fmt.Errorf("invalid passwd entry for %s", username)
+	}
+	uid, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return targetUser{}, fmt.Errorf("parse uid for %s: %w", username, err)
+	}
+	gid, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return targetUser{}, fmt.Errorf("parse gid for %s: %w", username, err)
+	}
+	if uid < 1000 {
+		return targetUser{}, fmt.Errorf("refusing to install dev tools for %s: uid %d is below 1000", username, uid)
+	}
+	home := strings.TrimSpace(parts[5])
+	if home == "" || !filepath.IsAbs(home) {
+		return targetUser{}, fmt.Errorf("invalid home directory for %s: %q", username, home)
+	}
+	return targetUser{uid: uid, gid: gid, home: home}, nil
+}
+
+func verifySHA256File(runner setupexec.CmdRunner, path, expected string) error {
+	expected = strings.TrimSpace(expected)
+	decoded, err := hex.DecodeString(expected)
+	if err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("invalid SHA256 %q", expected)
+	}
+	data, err := runner.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	if !strings.EqualFold(hex.EncodeToString(sum[:]), expected) {
+		return fmt.Errorf("expected %s", expected)
+	}
+	return nil
+}

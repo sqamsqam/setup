@@ -35,6 +35,13 @@ func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 		Name:    "setup",
 		Usage:   "Provisioning helper for fresh Ubuntu 26.04 LXC containers",
 		Version: version,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "Print actions without changing the system",
+				Value: dryRun,
+			},
+		},
 		ExitErrHandler: func(ctx context.Context, cmd *cli.Command, err error) {
 			// Prevent urfave/cli from calling os.Exit(1) internally.
 			// Error is printed by the caller (main.go).
@@ -48,6 +55,10 @@ func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			versionCmd(),
 		},
 	}
+}
+
+func commandDryRun(cmd *cli.Command, fallback bool) bool {
+	return fallback || cmd.Root().Bool("dry-run")
 }
 
 func defaultRunner(dryRun bool) setupexec.CmdRunner {
@@ -86,7 +97,7 @@ func bootstrapCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			},
 		},
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-			return system.Bootstrap(runnerFactory(dryRun), cmd.String("timezone"))
+			return system.Bootstrap(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("timezone"))
 		}),
 	}
 }
@@ -117,6 +128,9 @@ func addUserCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			username := cmd.String("user")
 			pubkey := cmd.String("key")
 			if keyFile := cmd.String("key-file"); keyFile != "" {
+				if pubkey != "" {
+					return fmt.Errorf("use either --key or --key-file, not both")
+				}
 				keyBytes, err := os.ReadFile(keyFile)
 				if err != nil {
 					return fmt.Errorf("reading key file %s: %w", keyFile, err)
@@ -126,7 +140,7 @@ func addUserCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			if pubkey == "" {
 				return fmt.Errorf("either --key or --key-file is required")
 			}
-			return user.AddUser(runnerFactory(dryRun), username, pubkey)
+			return user.AddUser(runnerFactory(commandDryRun(cmd, dryRun)), username, pubkey)
 		}),
 	}
 }
@@ -137,7 +151,7 @@ func installToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 		Aliases: []string{"i"},
 		Usage:   "Install ripgrep, fd, bat, yq, glow, gh",
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-			return tools.InstallAll(runnerFactory(dryRun))
+			return tools.InstallAll(runnerFactory(commandDryRun(cmd, dryRun)))
 		}),
 	}
 }
@@ -178,7 +192,7 @@ func devToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				nodeOnly = true
 			}
 
-			runner := runnerFactory(dryRun)
+			runner := runnerFactory(commandDryRun(cmd, dryRun))
 			if goOnly {
 				if err := devtools.InstallGo(runner); err != nil {
 					return err
@@ -226,6 +240,9 @@ func fullCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			username := cmd.String("user")
 			pubkey := cmd.String("key")
 			if keyFile := cmd.String("key-file"); keyFile != "" {
+				if pubkey != "" {
+					return fmt.Errorf("use either --key or --key-file, not both")
+				}
 				keyBytes, err := os.ReadFile(keyFile)
 				if err != nil {
 					return fmt.Errorf("reading key file %s: %w", keyFile, err)
@@ -236,7 +253,7 @@ func fullCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				return fmt.Errorf("either --key or --key-file is required")
 			}
 			tz := cmd.String("timezone")
-			runner := runnerFactory(dryRun)
+			runner := runnerFactory(commandDryRun(cmd, dryRun))
 
 			setupexec.PrintStep("=== Full provisioning started ===")
 			if err := system.Bootstrap(runner, tz); err != nil {

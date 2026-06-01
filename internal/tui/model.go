@@ -90,6 +90,10 @@ type model struct {
 	timezone    string
 	usernameErr string
 	sshKeyErr   string
+	timezoneErr string
+
+	timezoneMatches []string
+	timezoneCursor  int
 
 	steps        []step
 	spinnerFrame int

@@ -1,7 +1,11 @@
 package user
 
 import (
+	"errors"
+	"strings"
 	"testing"
+
+	setupexec "github.com/sqamsqam/setup/internal/exec"
 )
 
 func TestValidateUsername(t *testing.T) {
@@ -75,5 +79,60 @@ func TestValidateSSHKey(t *testing.T) {
 				t.Errorf("ValidateSSHKey(%q) error = %v, wantErr = %v", tt.key, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+type passwdRunner struct {
+	*setupexec.DryRunner
+	passwd string
+	err    error
+}
+
+func (p passwdRunner) Output(name string, args ...string) (string, error) {
+	if name == "getent" {
+		return p.passwd, p.err
+	}
+	return p.DryRunner.Output(name, args...)
+}
+
+func TestLookupAccountRejectsSystemUID(t *testing.T) {
+	runner := passwdRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		passwd:    "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
+	}
+	_, err := lookupAccount(runner, "daemon")
+	if err == nil {
+		t.Fatal("expected low UID error")
+	}
+	if !strings.Contains(err.Error(), "below 1000") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLookupAccountUsesPasswdHome(t *testing.T) {
+	runner := passwdRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		passwd:    "dev:x:1001:1002:Dev:/srv/dev:/bin/bash",
+	}
+	acct, err := lookupAccount(runner, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acct.home != "/srv/dev" {
+		t.Fatalf("expected passwd home, got %q", acct.home)
+	}
+	if acct.uid != 1001 || acct.gid != 1002 {
+		t.Fatalf("unexpected ids: uid=%d gid=%d", acct.uid, acct.gid)
+	}
+}
+
+func TestLookupAccountPropagatesMissingUser(t *testing.T) {
+	runner := passwdRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		err:       errors.New("missing"),
+	}
+	_, err := lookupAccount(runner, "missing")
+	if err == nil {
+		t.Fatal("expected missing user error")
 	}
 }
