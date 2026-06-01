@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 
@@ -28,7 +29,56 @@ func newWizardRunner(dryRun bool, output io.Writer) setupexec.CmdRunner {
 	real.Stdin = nil
 	real.Stdout = output
 	real.Stderr = output
-	return real
+	return loggingRunner{CmdRunner: real, output: output}
+}
+
+type loggingRunner struct {
+	setupexec.CmdRunner
+	output io.Writer
+}
+
+func (r loggingRunner) Run(name string, args ...string) error {
+	r.logCommand(commandString(name, args...))
+	return r.CmdRunner.Run(name, args...)
+}
+
+func (r loggingRunner) Output(name string, args ...string) (string, error) {
+	r.logCommand(commandString(name, args...))
+	return r.CmdRunner.Output(name, args...)
+}
+
+func (r loggingRunner) RunAsUser(user, name string, args ...string) error {
+	allArgs := append([]string{"-iu", user, "--", name}, args...)
+	r.logCommand(commandString("sudo", allArgs...))
+	return r.CmdRunner.RunAsUser(user, name, args...)
+}
+
+func (r loggingRunner) Shell(script string) error {
+	r.logCommand(commandString("bash", "-c", script))
+	return r.CmdRunner.Shell(script)
+}
+
+func (r loggingRunner) logCommand(cmd string) {
+	_, _ = fmt.Fprintf(r.output, "$ %s\n", cmd)
+}
+
+func commandString(name string, args ...string) string {
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, name)
+	for _, arg := range args {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(s, " \t\n'\"\\$`|&;()<>*?[]{}!") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func runProvisioningStep(m model) tea.Cmd {

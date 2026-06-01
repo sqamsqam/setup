@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-01
+
+### Changed
+- TUI now uses the full terminal screen and gives the provisioning log more room, including a wider run layout on capable terminals.
+- TUI provisioning logs now visually distinguish commands, step starts, and completion/error messages.
+
+### Fixed
+- TUI confirmation screen can now scroll when the full plan does not fit.
+- TUI running and done screens now keep the step list and log inside the terminal height on narrower terminals.
+- TUI timezone input now bounds visible fuzzy matches so validation errors do not push the screen past the terminal height.
+
 ## [0.5.1] - 2026-06-01
 
 ### Added

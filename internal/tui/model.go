@@ -149,7 +149,7 @@ var keys = tuiKeys{
 	Back:     key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 	Retry:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "retry")),
 	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Scroll:   key.NewBinding(key.WithKeys("pgup/pgdn"), key.WithHelp("pgup/pgdn", "scroll output")),
+	Scroll:   key.NewBinding(key.WithKeys("pgup/pgdn"), key.WithHelp("pgup/pgdn", "scroll")),
 }
 
 type helpKeyMap struct {
@@ -186,6 +186,8 @@ type model struct {
 	sshKeyInput        textarea.Model
 	spinner            spinner.Model
 	progress           progress.Model
+	confirm            viewport.Model
+	steps              viewport.Model
 	output             viewport.Model
 
 	runSteps     []runStep
@@ -204,10 +206,17 @@ func InitialModel(dryRun bool) model {
 		help:         help.New(),
 		spinner:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle)),
 		progress:     progress.New(progress.WithWidth(36), progress.WithColors(lipgloss.Color("#2E7D6B"))),
+		confirm:      viewport.New(),
+		steps:        viewport.New(),
 		output:       viewport.New(),
 		runningIndex: -1,
 	}
+	m.confirm.SoftWrap = true
+	m.confirm.FillHeight = true
+	m.steps.SoftWrap = true
+	m.steps.FillHeight = true
 	m.output.SoftWrap = true
+	m.output.FillHeight = true
 	m.initInputs()
 	m.planList = m.newPlanList()
 	return m
@@ -218,25 +227,30 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) View() tea.View {
-	var v tea.View
+	var content string
 	switch m.screen {
 	case screenMainMenu:
-		v = tea.NewView(m.mainMenuView())
+		content = m.mainMenuView()
 	case screenInputTimezone:
-		v = tea.NewView(m.inputTimezoneView())
+		content = m.inputTimezoneView()
 	case screenInputUser:
-		v = tea.NewView(m.inputUserView())
+		content = m.inputUserView()
 	case screenInputKey:
-		v = tea.NewView(m.inputKeyView())
+		content = m.inputKeyView()
 	case screenConfirm:
-		v = tea.NewView(m.confirmView())
+		content = m.confirmView()
 	case screenRunning:
-		v = tea.NewView(m.runningView())
+		content = m.runningView()
 	case screenDone:
-		v = tea.NewView(m.doneView())
+		content = m.doneView()
 	default:
-		v = tea.NewView("Unknown screen\n")
+		content = "Unknown screen\n"
 	}
+	if m.width > 0 && m.height > 0 {
+		content = lipgloss.NewStyle().Width(m.width).Height(m.height).Render(content)
+	}
+	v := tea.NewView(content)
+	v.AltScreen = true
 	return v
 }
 
@@ -326,39 +340,126 @@ func (m *model) resize(width, height int) {
 	m.width = width
 	m.height = height
 
-	contentWidth := width - 6
-	if contentWidth < 40 {
-		contentWidth = 40
+	pageWidth := width - 6
+	if pageWidth < 40 {
+		pageWidth = 40
 	}
-	if contentWidth > 96 {
-		contentWidth = 96
+	if pageWidth > 96 {
+		pageWidth = 96
 	}
 
 	listHeight := height - 9
 	if listHeight < 12 {
 		listHeight = 12
 	}
-	m.planList.SetSize(contentWidth, listHeight)
-	m.help.SetWidth(contentWidth)
-	m.usernameInput.SetWidth(contentWidth - 4)
-	m.timezoneInput.SetWidth(contentWidth - 4)
-	m.sshKeyInput.SetWidth(contentWidth - 4)
-	m.output.SetWidth(contentWidth)
+	m.planList.SetSize(pageWidth, listHeight)
+	m.help.SetWidth(pageWidth)
+	m.usernameInput.SetWidth(pageWidth - 4)
+	m.timezoneInput.SetWidth(pageWidth - 4)
+	m.sshKeyInput.SetWidth(pageWidth - 4)
+	m.confirm.SetWidth(pageWidth - 4)
 
-	outputHeight := height - 16
-	if outputHeight < 6 {
-		outputHeight = 6
+	confirmHeight := height - 9
+	if confirmHeight < 6 {
+		confirmHeight = 6
 	}
+	m.confirm.SetHeight(confirmHeight)
+
+	stepsWidth, stepsHeight := m.stepsSize()
+	m.steps.SetWidth(stepsWidth)
+	m.steps.SetHeight(stepsHeight)
+	if len(m.runSteps) > 0 {
+		m.refreshSteps()
+	}
+
+	outputWidth, outputHeight := m.outputSize()
+	m.output.SetWidth(outputWidth)
 	m.output.SetHeight(outputHeight)
 
-	progressWidth := contentWidth - 12
+	progressWidth := m.runContentWidth() - 12
 	if progressWidth < 18 {
 		progressWidth = 18
 	}
-	if progressWidth > 52 {
-		progressWidth = 52
+	if progressWidth > 72 {
+		progressWidth = 72
 	}
 	m.progress.SetWidth(progressWidth)
+}
+
+func (m model) runContentWidth() int {
+	width := m.width - 4
+	if width < 40 {
+		return 40
+	}
+	return width
+}
+
+func (m model) usesRunColumns() bool {
+	return m.runContentWidth() >= 92
+}
+
+func (m model) stepPanelWidth() int {
+	width := 36
+	if len(m.runSteps) > 9 {
+		width = 40
+	}
+	if max := m.runContentWidth() / 2; width > max {
+		width = max
+	}
+	if width < 28 {
+		return 28
+	}
+	return width
+}
+
+func (m model) outputSize() (int, int) {
+	contentWidth := m.runContentWidth()
+	if m.usesRunColumns() {
+		outputWidth := contentWidth - m.stepPanelWidth() - 8
+		if outputWidth < 32 {
+			outputWidth = 32
+		}
+		outputHeight := m.height - 9
+		if outputHeight < 6 {
+			outputHeight = 6
+		}
+		return outputWidth, outputHeight
+	}
+
+	outputWidth := contentWidth - 6
+	if outputWidth < 32 {
+		outputWidth = 32
+	}
+	_, stepsHeight := m.stepsSize()
+	outputHeight := m.height - stepsHeight - 13
+	if outputHeight < 6 {
+		outputHeight = 6
+	}
+	return outputWidth, outputHeight
+}
+
+func (m model) stepsSize() (int, int) {
+	if m.usesRunColumns() {
+		stepsWidth := m.stepPanelWidth() - 2
+		if stepsWidth < 24 {
+			stepsWidth = 24
+		}
+		_, outputHeight := m.outputSize()
+		return stepsWidth, outputHeight
+	}
+
+	stepsWidth := m.runContentWidth() - 6
+	if stepsWidth < 32 {
+		stepsWidth = 32
+	}
+	stepsHeight := (m.height - 11) / 2
+	if stepsHeight < 4 {
+		stepsHeight = 4
+	}
+	if max := len(m.runSteps) + 1; max > 0 && stepsHeight > max {
+		stepsHeight = max
+	}
+	return stepsWidth, stepsHeight
 }
 
 func (m model) inputFlow() []screen {

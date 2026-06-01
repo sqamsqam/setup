@@ -17,7 +17,7 @@ import (
 	"github.com/sqamsqam/setup/internal/user"
 )
 
-const maxTimezoneMatches = 8
+const maxTimezoneMatches = 6
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -34,6 +34,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
+		m.refreshSteps()
 		return m, cmd
 
 	case tea.PasteMsg:
@@ -90,6 +91,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenInputKey:
 			var cmd tea.Cmd
 			m.sshKeyInput, cmd = m.sshKeyInput.Update(msg)
+			return m, cmd
+		case screenConfirm:
+			var cmd tea.Cmd
+			m.confirm, cmd = m.confirm.Update(msg)
 			return m, cmd
 		case screenRunning, screenDone:
 			var cmd tea.Cmd
@@ -238,14 +243,21 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.screen = screenMainMenu
 			return m, nil
 		}
+		if m.width > 0 && m.height > 0 {
+			m.resize(m.width, m.height)
+		}
 		m.runningIndex = 0
 		m.runSteps[m.runningIndex].status = stepRunning
 		m.screen = screenRunning
 		m.output.SetContent("")
+		m.refreshSteps()
 		m.refreshOutput()
 		return m, tea.Batch(runProvisioningStep(m), tickSpinner(m.spinner))
+	default:
+		var cmd tea.Cmd
+		m.confirm, cmd = m.confirm.Update(msg)
+		return m, cmd
 	}
-	return m, nil
 }
 
 func (m model) updateRunning(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -253,9 +265,7 @@ func (m model) updateRunning(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
-	var cmd tea.Cmd
-	m.output, cmd = m.output.Update(msg)
-	return m, cmd
+	return m.updateRunViewports(msg)
 }
 
 func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -271,16 +281,22 @@ func (m model) updateDone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.runSteps[m.runningIndex].status = stepRunning
 			m.runSteps[m.runningIndex].output = ""
 			m.screen = screenRunning
+			m.refreshSteps()
 			m.refreshOutput()
 			return m, tea.Batch(runProvisioningStep(m), tickSpinner(m.spinner))
 		}
 		m.resetToPlan()
 		return m, nil
 	default:
-		var cmd tea.Cmd
-		m.output, cmd = m.output.Update(msg)
-		return m, cmd
+		return m.updateRunViewports(msg)
 	}
+}
+
+func (m model) updateRunViewports(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var stepsCmd, outputCmd tea.Cmd
+	m.steps, stepsCmd = m.steps.Update(msg)
+	m.output, outputCmd = m.output.Update(msg)
+	return m, tea.Batch(stepsCmd, outputCmd)
 }
 
 func tickSpinner(s spinner.Model) tea.Cmd {
@@ -295,6 +311,7 @@ func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
 	}
 	m.runSteps[msg.index].status = msg.status
 	m.runSteps[msg.index].output = msg.output
+	m.refreshSteps()
 	m.refreshOutput()
 
 	if msg.status == stepFail {
@@ -312,6 +329,7 @@ func (m model) handleStepMsg(msg stepStatusMsg) (tea.Model, tea.Cmd) {
 
 	m.runningIndex = next
 	m.runSteps[next].status = stepRunning
+	m.refreshSteps()
 	m.refreshOutput()
 	return m, runProvisioningStep(m)
 }
@@ -364,6 +382,7 @@ func (m model) startInputFlow() (tea.Model, tea.Cmd) {
 	flow := m.inputFlow()
 	if len(flow) == 0 {
 		m.screen = screenConfirm
+		m.refreshConfirm()
 		return m, nil
 	}
 	m.inputPos = 0
@@ -379,6 +398,7 @@ func (m model) goNext() (tea.Model, tea.Cmd) {
 		return m, m.focusCurrentInput()
 	}
 	m.screen = screenConfirm
+	m.refreshConfirm()
 	return m, nil
 }
 
@@ -416,7 +436,20 @@ func (m *model) resetToPlan() {
 	m.planErr = ""
 	m.runSteps = nil
 	m.runningIndex = -1
+	m.steps.SetContent("")
 	m.output.SetContent("")
+}
+
+func (m *model) refreshConfirm() {
+	m.confirm.SetContent(m.confirmBody())
+	m.confirm.GotoTop()
+}
+
+func (m *model) refreshSteps() {
+	m.steps.SetContent(m.stepsContent())
+	if m.runningIndex >= 0 {
+		m.steps.EnsureVisible(m.runningIndex, 0, 0)
+	}
 }
 
 func (m model) currentStepFailed() bool {
@@ -484,7 +517,7 @@ func (m *model) refreshOutput() {
 		}
 		fmt.Fprintf(&b, "== %s ==\n%s", step.name, strings.TrimSpace(step.output))
 	}
-	m.output.SetContent(b.String())
+	m.output.SetContent(colorizeLog(b.String()))
 	m.output.GotoBottom()
 }
 

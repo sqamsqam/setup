@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/sqamsqam/setup/internal/tools"
 )
@@ -242,6 +243,176 @@ func TestInvalidSSHKeyShowsError(t *testing.T) {
 	}
 	if got.screen != screenInputKey {
 		t.Fatalf("expected to stay on SSH key screen, got %d", got.screen)
+	}
+}
+
+func TestConfirmScreenScrolls(t *testing.T) {
+	m := InitialModel(false)
+	m.resize(80, 12)
+	m.screen = screenConfirm
+	m.refreshConfirm()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+	got := updated.(model)
+	if got.confirm.YOffset() == 0 {
+		t.Fatal("expected confirm viewport to scroll")
+	}
+}
+
+func TestRunningViewFitsTerminalHeight(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = m.buildRunSteps()
+	m.runningIndex = 0
+	m.runSteps[0].status = stepRunning
+	m.runSteps[0].output = strings.Repeat("log line\n", 80)
+	m.resize(80, 24)
+	m.screen = screenRunning
+	m.refreshSteps()
+	m.refreshOutput()
+
+	if got := lipgloss.Height(m.runningView()); got > m.height {
+		t.Fatalf("running view height = %d, want <= %d", got, m.height)
+	}
+}
+
+func TestDoneViewFitsTerminalHeight(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = m.buildRunSteps()
+	for i := range m.runSteps {
+		m.runSteps[i].status = stepOK
+	}
+	m.runningIndex = len(m.runSteps) - 1
+	m.resize(80, 24)
+	m.screen = screenDone
+	m.refreshSteps()
+	m.refreshOutput()
+
+	if got := lipgloss.Height(m.doneView()); got > m.height {
+		t.Fatalf("done view height = %d, want <= %d", got, m.height)
+	}
+}
+
+func TestRunningStepListScrolls(t *testing.T) {
+	m := InitialModel(false)
+	m.runSteps = m.buildRunSteps()
+	m.runningIndex = 0
+	m.runSteps[0].status = stepRunning
+	m.resize(80, 18)
+	m.screen = screenRunning
+	m.refreshSteps()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}))
+	got := updated.(model)
+	if got.steps.YOffset() == 0 {
+		t.Fatal("expected run step viewport to scroll")
+	}
+}
+
+func TestViewsFitStandardTerminalHeight(t *testing.T) {
+	tests := []struct {
+		name  string
+		model func() model
+	}{
+		{
+			name: "main menu",
+			model: func() model {
+				m := InitialModel(true)
+				m.resize(80, 24)
+				m.planErr = "select at least one provisioning item"
+				return m
+			},
+		},
+		{
+			name: "timezone input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputTimezone
+				m.timezoneMatches = []string{
+					"America/Anchorage",
+					"America/Chicago",
+					"America/Denver",
+					"America/Los_Angeles",
+					"America/New_York",
+					"America/Phoenix",
+					"America/Toronto",
+					"America/Vancouver",
+				}
+				m.inputErr = `unknown timezone "America/Nowhere"`
+				return m
+			},
+		},
+		{
+			name: "user input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputUser
+				m.inputErr = "invalid username"
+				return m
+			},
+		},
+		{
+			name: "ssh key input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputKey
+				m.inputErr = "invalid SSH public key"
+				return m
+			},
+		},
+		{
+			name: "confirm",
+			model: func() model {
+				m := InitialModel(true)
+				m.resize(80, 24)
+				m.screen = screenConfirm
+				m.refreshConfirm()
+				return m
+			},
+		},
+		{
+			name: "running",
+			model: func() model {
+				m := InitialModel(false)
+				m.runSteps = m.buildRunSteps()
+				m.runningIndex = 0
+				m.runSteps[0].status = stepRunning
+				m.runSteps[0].output = strings.Repeat("log line\n", 80)
+				m.resize(80, 24)
+				m.screen = screenRunning
+				m.refreshSteps()
+				m.refreshOutput()
+				return m
+			},
+		},
+		{
+			name: "done",
+			model: func() model {
+				m := InitialModel(false)
+				m.runSteps = m.buildRunSteps()
+				for i := range m.runSteps {
+					m.runSteps[i].status = stepOK
+					m.runSteps[i].output = strings.Repeat("log line\n", 20)
+				}
+				m.runningIndex = len(m.runSteps) - 1
+				m.resize(80, 24)
+				m.screen = screenDone
+				m.refreshSteps()
+				m.refreshOutput()
+				return m
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := tt.model()
+			if got := lipgloss.Height(m.View().Content); got > m.height {
+				t.Fatalf("view height = %d, want <= %d", got, m.height)
+			}
+		})
 	}
 }
 
