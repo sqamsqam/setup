@@ -18,6 +18,8 @@ Prefer to install without launching?
 curl -fsSL https://raw.githubusercontent.com/sqamsqam/setup/main/install.sh | sudo SETUP_SKIP_LAUNCH=1 bash
 ```
 
+Run the same installer again later to update `setup` to the latest release.
+
 ## Common Commands
 
 ```bash

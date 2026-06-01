@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Installer reruns now verify the latest release checksum and atomically replace the existing `setup` binary.
+
 ## [0.8.1] - 2026-06-01
 
 ### Changed
