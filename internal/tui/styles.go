@@ -45,9 +45,6 @@ var (
 			Foreground(lipgloss.Color(colorMuted))
 	faintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorDim))
-	labelStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color(colorAccentHot))
 	fieldLabelStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color(colorCyan))
