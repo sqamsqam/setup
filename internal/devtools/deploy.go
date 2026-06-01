@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	"github.com/sqamsqam/setup/internal/github"
 	setupuser "github.com/sqamsqam/setup/internal/user"
 )
 
@@ -257,20 +258,37 @@ func detectShell(runner setupexec.CmdRunner, username string) string {
 }
 
 type InstallOptions struct {
-	Go   bool
-	Node bool
+	Go          bool
+	Node        bool
+	Rust        bool
+	GoLint      bool
+	GoReleaser  bool
+	GoVulnCheck bool
+	Pnpm        bool
 }
 
-func AllInstallOptions() InstallOptions {
+func DefaultInstallOptions() InstallOptions {
 	return InstallOptions{Go: true, Node: true}
 }
 
+func AllInstallOptions() InstallOptions {
+	return InstallOptions{
+		Go:          true,
+		Node:        true,
+		Rust:        true,
+		GoLint:      true,
+		GoReleaser:  true,
+		GoVulnCheck: true,
+		Pnpm:        true,
+	}
+}
+
 func (o InstallOptions) Any() bool {
-	return o.Go || o.Node
+	return o.Go || o.Node || o.Rust || o.GoLint || o.GoReleaser || o.GoVulnCheck || o.Pnpm
 }
 
 func InstallAllDevTools(runner setupexec.CmdRunner, username string) error {
-	return InstallSelected(runner, username, AllInstallOptions())
+	return InstallSelected(runner, username, DefaultInstallOptions())
 }
 
 func InstallSelected(runner setupexec.CmdRunner, username string, opts InstallOptions) error {
@@ -288,7 +306,206 @@ func InstallSelected(runner setupexec.CmdRunner, username string, opts InstallOp
 			return err
 		}
 	}
+	if opts.Rust {
+		if err := InstallRust(runner, username); err != nil {
+			return err
+		}
+	}
+	if opts.GoLint {
+		if err := InstallGoLint(runner); err != nil {
+			return err
+		}
+	}
+	if opts.GoReleaser {
+		if err := InstallGoReleaser(runner); err != nil {
+			return err
+		}
+	}
+	if opts.GoVulnCheck {
+		if !opts.Go {
+			if err := InstallGo(runner); err != nil {
+				return err
+			}
+		}
+		if err := InstallGoVulnCheck(runner); err != nil {
+			return err
+		}
+	}
+	if opts.Pnpm {
+		if !opts.Node {
+			if err := InstallNode(runner, username); err != nil {
+				return err
+			}
+		}
+		if err := InstallPnpm(runner, username); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func InstallRust(runner setupexec.CmdRunner, username string) error {
+	if _, err := validateTargetUser(runner, username); err != nil {
+		return err
+	}
+	if err := runner.Run("apt", "update"); err != nil {
+		return err
+	}
+	if err := runner.Run("apt", "install", "-y", "rustup", "ca-certificates"); err != nil {
+		return err
+	}
+	script := strings.TrimSpace(`
+set -euo pipefail
+rustup toolchain install stable
+rustup default stable
+rustup component add rustfmt clippy rust-analyzer rust-src
+echo "Rust toolchain installed for $(whoami)."
+`)
+	return runner.RunAsUser(username, "bash", "-c", script)
+}
+
+func InstallGoLint(runner setupexec.CmdRunner) error {
+	return installGitHubTarBinary(
+		runner,
+		"golangci/golangci-lint",
+		`golangci-lint-.*-linux-amd64\.tar\.gz$`,
+		`checksums\.txt$`,
+		"golangci-lint",
+		"/usr/local/bin/golangci-lint",
+	)
+}
+
+func InstallGoReleaser(runner setupexec.CmdRunner) error {
+	return installGitHubTarBinary(
+		runner,
+		"goreleaser/goreleaser",
+		`goreleaser_.*Linux_x86_64\.tar\.gz$`,
+		`checksums\.txt$`,
+		"goreleaser",
+		"/usr/local/bin/goreleaser",
+	)
+}
+
+func InstallGoVulnCheck(runner setupexec.CmdRunner) error {
+	if setupexec.IsDryRun(runner) {
+		return runner.Run("bash", "-c", "GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@latest")
+	}
+	if _, err := runner.Output("/usr/local/go/bin/go", "version"); err != nil {
+		if err := InstallGo(runner); err != nil {
+			return err
+		}
+	}
+	return runner.Shell("GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@latest")
+}
+
+func InstallPnpm(runner setupexec.CmdRunner, username string) error {
+	if _, err := validateTargetUser(runner, username); err != nil {
+		return err
+	}
+	script := strings.TrimSpace(`
+set -euo pipefail
+export FNM_DIR="$HOME/.local/share/fnm"
+export PATH="$FNM_DIR:$PATH"
+if [[ -x "$FNM_DIR/fnm" ]]; then
+  eval "$("$FNM_DIR/fnm" env --shell bash)"
+fi
+if ! command -v corepack >/dev/null 2>&1; then
+  echo "ERROR: corepack not found; install the Node.js toolchain first." >&2
+  exit 1
+fi
+corepack enable
+corepack prepare pnpm@latest --activate
+pnpm --version
+`)
+	return runner.RunAsUser(username, "bash", "-c", script)
+}
+
+func installGitHubTarBinary(runner setupexec.CmdRunner, repo, archivePattern, checksumPattern, binaryName, destPath string) error {
+	if setupexec.IsDryRun(runner) {
+		return runner.Run("install", "-m", "0755", binaryName, destPath)
+	}
+	if err := runner.Run("apt", "update"); err != nil {
+		return err
+	}
+	if err := runner.Run("apt", "install", "-y", "curl", "tar", "ca-certificates"); err != nil {
+		return err
+	}
+
+	archiveURL, err := github.LatestReleaseAsset(repo, archivePattern)
+	if err != nil {
+		return fmt.Errorf("find %s archive: %w", repo, err)
+	}
+	checksumURL, err := github.LatestReleaseAsset(repo, checksumPattern)
+	if err != nil {
+		return fmt.Errorf("find %s checksum file: %w", repo, err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "setup-github-tool-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer func() { _ = runner.RemoveAll(tmpDir) }()
+
+	archiveName := archiveURL[strings.LastIndex(archiveURL, "/")+1:]
+	archivePath := filepath.Join(tmpDir, archiveName)
+	checksumPath := filepath.Join(tmpDir, "checksums.txt")
+
+	if err := runner.Run("curl", "-fsSL", archiveURL, "-o", archivePath); err != nil {
+		return fmt.Errorf("download %s: %w", repo, err)
+	}
+	if err := runner.Run("curl", "-fsSL", checksumURL, "-o", checksumPath); err != nil {
+		return fmt.Errorf("download %s checksums: %w", repo, err)
+	}
+
+	checksumContent, err := runner.ReadFile(checksumPath)
+	if err != nil {
+		return fmt.Errorf("read %s checksums: %w", repo, err)
+	}
+	expected, err := checksumForFilename(string(checksumContent), archiveName)
+	if err != nil {
+		return fmt.Errorf("find checksum for %s: %w", archiveName, err)
+	}
+	if err := verifySHA256File(runner, archivePath, expected); err != nil {
+		return fmt.Errorf("verify %s: %w", archiveName, err)
+	}
+
+	if err := runner.Run("tar", "-C", tmpDir, "-xzf", archivePath); err != nil {
+		return fmt.Errorf("extract %s: %w", archiveName, err)
+	}
+	findScript := fmt.Sprintf("find %s -type f -name %s -perm /111 -print -quit", shellQuote(tmpDir), shellQuote(binaryName))
+	binaryPath, err := runner.Output("bash", "-c", findScript)
+	if err != nil {
+		return fmt.Errorf("find %s binary: %w", binaryName, err)
+	}
+	if strings.TrimSpace(binaryPath) == "" {
+		return fmt.Errorf("%s binary missing from %s", binaryName, archiveName)
+	}
+	if err := runner.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+	return runner.Run("install", "-m", "0755", strings.TrimSpace(binaryPath), destPath)
+}
+
+func checksumForFilename(checksums, filename string) (string, error) {
+	for _, line := range strings.Split(checksums, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		first := strings.TrimPrefix(fields[0], "*")
+		last := strings.TrimPrefix(fields[len(fields)-1], "*")
+		switch {
+		case last == filename:
+			return fields[0], nil
+		case first == filename:
+			return fields[len(fields)-1], nil
+		}
+	}
+	return "", fmt.Errorf("no checksum entry for %s", filename)
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 type targetUser struct {

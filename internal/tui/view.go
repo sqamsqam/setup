@@ -56,9 +56,9 @@ var (
 
 func (m model) mainMenuView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Ubuntu LXC Provisioning"))
+	s.WriteString(titleStyle.Render("Ubuntu Dev Instance Setup"))
 	s.WriteString("\n")
-	s.WriteString(subtitleStyle.Render("Edit the run plan, then continue through only the required inputs."))
+	s.WriteString(subtitleStyle.Render("Choose bootstrap, management, CLI, and toolchain actions."))
 	s.WriteString("\n\n")
 
 	if os.Geteuid() != 0 {
@@ -181,6 +181,18 @@ func (m model) confirmBody() string {
 	}
 	if m.selections.AddUser {
 		body.WriteString("  The user receives passwordless sudo and SSH AllowUsers is regenerated.\n")
+	}
+	if m.selections.FirewallBaseline {
+		body.WriteString("  UFW will allow the detected SSH port before enabling default-deny incoming rules.\n")
+	}
+	if m.selections.FirewallHTTP || m.selections.FirewallHTTPS || m.selections.FirewallMosh {
+		body.WriteString("  Selected common firewall ports will be opened through UFW.\n")
+	}
+	if m.selections.Fail2Ban {
+		body.WriteString("  fail2ban will manage a setup-owned SSH jail.\n")
+	}
+	if m.selections.DockerLogRotation {
+		body.WriteString("  Docker daemon log rotation will be merged into daemon.json and Docker restarted only if changed.\n")
 	}
 	if m.dryRun {
 		body.WriteString("\n")
@@ -366,6 +378,30 @@ func (m model) planSummaryLines() []string {
 	if m.selections.AddUser {
 		lines = append(lines, "Add User")
 	}
+	if m.selections.FirewallBaseline {
+		lines = append(lines, "Instance Management: UFW firewall baseline")
+	}
+	if m.selections.FirewallHTTP {
+		lines = append(lines, "Firewall Rule: allow HTTP")
+	}
+	if m.selections.FirewallHTTPS {
+		lines = append(lines, "Firewall Rule: allow HTTPS")
+	}
+	if m.selections.FirewallMosh {
+		lines = append(lines, "Firewall Rule: allow Mosh")
+	}
+	if m.selections.Fail2Ban {
+		lines = append(lines, "Instance Management: fail2ban SSH jail")
+	}
+	if m.selections.DockerLogRotation {
+		lines = append(lines, "Instance Management: Docker log rotation")
+	}
+	if m.selections.Diagnostics {
+		lines = append(lines, "Instance Management: Doctor diagnostics")
+	}
+	if m.selections.UpdatesCheck {
+		lines = append(lines, "Instance Management: Update check")
+	}
 	for _, tool := range m.selections.Tools.SelectedTools() {
 		lines = append(lines, "CLI Tool: "+string(tool))
 	}
@@ -374,6 +410,21 @@ func (m model) planSummaryLines() []string {
 	}
 	if m.selections.DevTools.Node {
 		lines = append(lines, "Development Tool: Node.js")
+	}
+	if m.selections.DevTools.Rust {
+		lines = append(lines, "Development Tool: Rust")
+	}
+	if m.selections.DevTools.GoLint {
+		lines = append(lines, "Development Tool: golangci-lint")
+	}
+	if m.selections.DevTools.GoReleaser {
+		lines = append(lines, "Development Tool: GoReleaser")
+	}
+	if m.selections.DevTools.GoVulnCheck {
+		lines = append(lines, "Development Tool: govulncheck")
+	}
+	if m.selections.DevTools.Pnpm {
+		lines = append(lines, "Development Tool: pnpm")
 	}
 	return lines
 }

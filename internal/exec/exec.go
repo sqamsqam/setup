@@ -236,3 +236,7 @@ func PrintDone(msg string) {
 func PrintError(msg string) {
 	_, _ = fmt.Fprintf(printWriter, "✗ %s\n", msg)
 }
+
+func PrintOutput(msg string) {
+	_, _ = fmt.Fprintln(printWriter, msg)
+}

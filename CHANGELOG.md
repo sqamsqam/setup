@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-01
+
+### Added
+- UFW firewall management commands and TUI actions for safe baseline setup, rule status, allow rules, deletion, and reset.
+- fail2ban SSH jail installation, status, and unban commands.
+- Docker log rotation configuration plus disk usage and safe prune helpers.
+- Read-only doctor diagnostics for LXC/VM/system state, apt locks, reboot state, SSH, UFW, and Docker.
+- Update management commands for package checks, upgrades, reboot-required state, unattended-upgrades status, failed units, and confirmed reboot.
+- Setup-managed per-user systemd service creation, status, logs, and restart helpers.
+- Rust toolchain installation and optional Go/Node ecosystem tools: golangci-lint, GoReleaser, govulncheck, and pnpm.
+
+### Changed
+- System bootstrap now configures Docker json-file log rotation after installing Docker.
+- The TUI setup plan now includes instance management and expanded toolchain actions alongside the original bootstrap flow.
+
 ## [0.5.4] - 2026-06-01
 
 ### Changed
@@ -146,6 +161,8 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.6.0]: https://github.com/sqamsqam/setup/releases/tag/v0.6.0
+[0.5.4]: https://github.com/sqamsqam/setup/releases/tag/v0.5.4
 [0.5.3]: https://github.com/sqamsqam/setup/releases/tag/v0.5.3
 [0.5.2]: https://github.com/sqamsqam/setup/releases/tag/v0.5.2
 [0.5.1]: https://github.com/sqamsqam/setup/releases/tag/v0.5.1

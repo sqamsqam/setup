@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 )
 
@@ -29,6 +30,7 @@ func Bootstrap(runner setupexec.CmdRunner, timezone string) error {
 		{"Hardening SSH", func() error { return hardenSSH(runner) }},
 		{"Locking root password", func() error { return lockRootPassword(runner) }},
 		{"Installing Docker", func() error { return installDocker(runner) }},
+		{"Configuring Docker log rotation", func() error { return dockermaint.ConfigureLogRotation(runner, dockermaint.DefaultLogRotationOptions()) }},
 		{"Enabling and starting SSH", func() error { return startSSH(runner) }},
 	}
 

@@ -24,6 +24,11 @@ func TestInstallOptions(t *testing.T) {
 	}
 
 	opts.Node = false
+	opts.Rust = false
+	opts.GoLint = false
+	opts.GoReleaser = false
+	opts.GoVulnCheck = false
+	opts.Pnpm = false
 	if !opts.Any() {
 		t.Fatal("go-only options should count as non-empty")
 	}

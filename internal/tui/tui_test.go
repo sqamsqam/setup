@@ -25,8 +25,8 @@ func TestInitialModel(t *testing.T) {
 	if !m.selections.Bootstrap || !m.selections.AddUser || !m.selections.Tools.Any() || !m.selections.DevTools.Any() {
 		t.Fatalf("expected full default selection: %#v", m.selections)
 	}
-	if len(m.planItems()) != 12 {
-		t.Errorf("expected 12 plan items, got: %d", len(m.planItems()))
+	if len(m.planItems()) != 26 {
+		t.Errorf("expected 26 plan items, got: %d", len(m.planItems()))
 	}
 }
 

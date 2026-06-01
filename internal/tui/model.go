@@ -46,10 +46,18 @@ type stepStatusMsg struct {
 }
 
 type selectionState struct {
-	Bootstrap bool
-	AddUser   bool
-	Tools     tools.InstallOptions
-	DevTools  devtools.InstallOptions
+	Bootstrap         bool
+	AddUser           bool
+	FirewallBaseline  bool
+	FirewallHTTP      bool
+	FirewallHTTPS     bool
+	FirewallMosh      bool
+	Fail2Ban          bool
+	DockerLogRotation bool
+	Diagnostics       bool
+	UpdatesCheck      bool
+	Tools             tools.InstallOptions
+	DevTools          devtools.InstallOptions
 }
 
 func defaultSelections() selectionState {
@@ -57,12 +65,15 @@ func defaultSelections() selectionState {
 		Bootstrap: true,
 		AddUser:   true,
 		Tools:     tools.AllInstallOptions(),
-		DevTools:  devtools.AllInstallOptions(),
+		DevTools:  devtools.DefaultInstallOptions(),
 	}
 }
 
 func (s selectionState) Any() bool {
-	return s.Bootstrap || s.AddUser || s.Tools.Any() || s.DevTools.Any()
+	return s.Bootstrap || s.AddUser || s.FirewallBaseline || s.FirewallHTTP ||
+		s.FirewallHTTPS || s.FirewallMosh || s.Fail2Ban ||
+		s.DockerLogRotation || s.Diagnostics || s.UpdatesCheck ||
+		s.Tools.Any() || s.DevTools.Any()
 }
 
 func (s selectionState) NeedsTimezone() bool {
@@ -70,7 +81,7 @@ func (s selectionState) NeedsTimezone() bool {
 }
 
 func (s selectionState) NeedsUsername() bool {
-	return s.AddUser || s.DevTools.Node
+	return s.AddUser || s.DevTools.Node || s.DevTools.Rust || s.DevTools.Pnpm
 }
 
 func (s selectionState) NeedsSSHKey() bool {
@@ -82,6 +93,15 @@ type planItemID string
 const (
 	itemBootstrap planItemID = "bootstrap"
 	itemAddUser   planItemID = "add-user"
+	itemManageAll planItemID = "manage-all"
+	itemFirewall  planItemID = "firewall"
+	itemHTTP      planItemID = "firewall-http"
+	itemHTTPS     planItemID = "firewall-https"
+	itemMosh      planItemID = "firewall-mosh"
+	itemFail2Ban  planItemID = "fail2ban"
+	itemDockerLog planItemID = "docker-log"
+	itemDoctor    planItemID = "doctor"
+	itemUpdates   planItemID = "updates"
 	itemCLIAll    planItemID = "cli-all"
 	itemRipgrep   planItemID = "ripgrep"
 	itemFd        planItemID = "fd"
@@ -92,6 +112,11 @@ const (
 	itemDevAll    planItemID = "dev-all"
 	itemGo        planItemID = "go"
 	itemNode      planItemID = "node"
+	itemRust      planItemID = "rust"
+	itemGoLint    planItemID = "go-lint"
+	itemGoRel     planItemID = "goreleaser"
+	itemGoVuln    planItemID = "govulncheck"
+	itemPnpm      planItemID = "pnpm"
 )
 
 type planItem struct {
@@ -117,10 +142,23 @@ type runStepID string
 const (
 	runBootstrap runStepID = "bootstrap"
 	runAddUser   runStepID = "add-user"
+	runFirewall  runStepID = "firewall"
+	runHTTP      runStepID = "firewall-http"
+	runHTTPS     runStepID = "firewall-https"
+	runMosh      runStepID = "firewall-mosh"
+	runFail2Ban  runStepID = "fail2ban"
+	runDockerLog runStepID = "docker-log"
+	runDoctor    runStepID = "doctor"
+	runUpdates   runStepID = "updates"
 	runToolDeps  runStepID = "tool-deps"
 	runTool      runStepID = "tool"
 	runGo        runStepID = "go"
 	runNode      runStepID = "node"
+	runRust      runStepID = "rust"
+	runGoLint    runStepID = "go-lint"
+	runGoRel     runStepID = "goreleaser"
+	runGoVuln    runStepID = "govulncheck"
+	runPnpm      runStepID = "pnpm"
 )
 
 type runStep struct {
@@ -289,7 +327,7 @@ func (m model) newPlanList() list.Model {
 	delegate.Styles.NormalDesc = delegate.Styles.NormalDesc.Foreground(lipgloss.Color("#8A8A8A"))
 
 	l := list.New(m.planItems(), delegate, 80, 18)
-	l.Title = "Provisioning plan"
+	l.Title = "Setup and management plan"
 	l.SetStatusBarItemName("step", "steps")
 	l.DisableQuitKeybindings()
 	l.AdditionalShortHelpKeys = func() []key.Binding {
@@ -304,11 +342,28 @@ func (m model) newPlanList() list.Model {
 func (m model) planItems() []list.Item {
 	cliAll := m.selections.Tools.Ripgrep && m.selections.Tools.Fd && m.selections.Tools.Bat &&
 		m.selections.Tools.Yq && m.selections.Tools.Glow && m.selections.Tools.Gh
-	devAll := m.selections.DevTools.Go && m.selections.DevTools.Node
+	manageAny := m.selections.FirewallBaseline || m.selections.FirewallHTTP || m.selections.FirewallHTTPS ||
+		m.selections.FirewallMosh || m.selections.Fail2Ban || m.selections.DockerLogRotation ||
+		m.selections.Diagnostics || m.selections.UpdatesCheck
+	manageAll := m.selections.FirewallBaseline && m.selections.FirewallHTTP && m.selections.FirewallHTTPS &&
+		m.selections.FirewallMosh && m.selections.Fail2Ban && m.selections.DockerLogRotation &&
+		m.selections.Diagnostics && m.selections.UpdatesCheck
+	devAll := m.selections.DevTools.Go && m.selections.DevTools.Node && m.selections.DevTools.Rust &&
+		m.selections.DevTools.GoLint && m.selections.DevTools.GoReleaser &&
+		m.selections.DevTools.GoVulnCheck && m.selections.DevTools.Pnpm
 
 	return []list.Item{
 		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt upgrade, base packages, SSH hardening, unattended upgrades, Docker"},
 		planItem{itemAddUser, checkbox(m.selections.AddUser, m.selections.AddUser) + " Add User", "Passwordless sudo, SSH public key, linger, and AllowUsers"},
+		planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "Toggle UFW, common firewall rules, fail2ban, Docker logs, diagnostics, and update checks below"},
+		planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, allow detected SSH port, enable UFW"},
+		planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Allow tcp/80 through UFW"},
+		planItem{itemHTTPS, "  " + checkbox(m.selections.FirewallHTTPS, m.selections.FirewallHTTPS) + " Allow HTTPS", "Allow tcp/443 through UFW"},
+		planItem{itemMosh, "  " + checkbox(m.selections.FirewallMosh, m.selections.FirewallMosh) + " Allow Mosh", "Allow udp/60000:61000 through UFW"},
+		planItem{itemFail2Ban, "  " + checkbox(m.selections.Fail2Ban, m.selections.Fail2Ban) + " fail2ban SSH Jail", "Install fail2ban and manage an sshd jail with sane defaults"},
+		planItem{itemDockerLog, "  " + checkbox(m.selections.DockerLogRotation, m.selections.DockerLogRotation) + " Docker Log Rotation", "Configure json-file max-size=10m and max-file=3"},
+		planItem{itemDoctor, "  " + checkbox(m.selections.Diagnostics, m.selections.Diagnostics) + " Doctor Diagnostics", "Read-only LXC/VM, update, service, firewall, SSH, and Docker checks"},
+		planItem{itemUpdates, "  " + checkbox(m.selections.UpdatesCheck, m.selections.UpdatesCheck) + " Update Check", "Refresh apt metadata and list upgradable packages"},
 		planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "Toggle all CLI tools below"},
 		planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "GitHub release .deb, apt fallback only when verification is unavailable"},
 		planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "GitHub release .deb, with Debian fd-find alias handling"},
@@ -316,9 +371,14 @@ func (m model) planItems() []list.Item {
 		planItem{itemYq, "  " + checkbox(m.selections.Tools.Yq, m.selections.Tools.Yq) + " yq", "Verified linux/amd64 binary from mikefarah/yq"},
 		planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with key fingerprint verification"},
 		planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with key fingerprint verification"},
-		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Toggle Go and Node.js tooling below"},
+		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Toggle Go, Node.js, Rust, and ecosystem tooling below"},
 		planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide install from go.dev with SHA256 verification"},
 		planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, latest Node, corepack, TypeScript, and tsx"},
+		planItem{itemRust, "  " + checkbox(m.selections.DevTools.Rust, m.selections.DevTools.Rust) + " Rust", "Per-user stable Rust toolchain via rustup with rustfmt, clippy, rust-analyzer, rust-src"},
+		planItem{itemGoLint, "  " + checkbox(m.selections.DevTools.GoLint, m.selections.DevTools.GoLint) + " golangci-lint", "Verified release archive installed to /usr/local/bin"},
+		planItem{itemGoRel, "  " + checkbox(m.selections.DevTools.GoReleaser, m.selections.DevTools.GoReleaser) + " GoReleaser", "Verified release archive installed to /usr/local/bin"},
+		planItem{itemGoVuln, "  " + checkbox(m.selections.DevTools.GoVulnCheck, m.selections.DevTools.GoVulnCheck) + " govulncheck", "Official Go vulnerability scanner installed with go install"},
+		planItem{itemPnpm, "  " + checkbox(m.selections.DevTools.Pnpm, m.selections.DevTools.Pnpm) + " pnpm", "Per-user pnpm via Corepack"},
 	}
 }
 
@@ -485,11 +545,42 @@ func (m model) selectedPlanCount() int {
 		count++
 	}
 	count += len(m.selections.Tools.SelectedTools())
-	if m.selections.DevTools.Go {
+	if m.selections.FirewallBaseline {
 		count++
 	}
-	if m.selections.DevTools.Node {
+	if m.selections.FirewallHTTP {
 		count++
+	}
+	if m.selections.FirewallHTTPS {
+		count++
+	}
+	if m.selections.FirewallMosh {
+		count++
+	}
+	if m.selections.Fail2Ban {
+		count++
+	}
+	if m.selections.DockerLogRotation {
+		count++
+	}
+	if m.selections.Diagnostics {
+		count++
+	}
+	if m.selections.UpdatesCheck {
+		count++
+	}
+	for _, selected := range []bool{
+		m.selections.DevTools.Go,
+		m.selections.DevTools.Node,
+		m.selections.DevTools.Rust,
+		m.selections.DevTools.GoLint,
+		m.selections.DevTools.GoReleaser,
+		m.selections.DevTools.GoVulnCheck,
+		m.selections.DevTools.Pnpm,
+	} {
+		if selected {
+			count++
+		}
 	}
 	return count
 }

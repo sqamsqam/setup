@@ -9,9 +9,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sqamsqam/setup/internal/devtools"
+	"github.com/sqamsqam/setup/internal/diagnostics"
+	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	"github.com/sqamsqam/setup/internal/firewall"
+	"github.com/sqamsqam/setup/internal/security"
 	"github.com/sqamsqam/setup/internal/system"
 	"github.com/sqamsqam/setup/internal/tools"
+	"github.com/sqamsqam/setup/internal/updates"
 	"github.com/sqamsqam/setup/internal/user"
 )
 
@@ -123,6 +128,28 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 		return system.Bootstrap(runner, timezone)
 	case runAddUser:
 		return user.AddUser(runner, username, normalizeSSHKeyInput(m.sshKeyInput.Value()))
+	case runFirewall:
+		return firewall.EnableBaseline(runner, true)
+	case runHTTP:
+		return firewall.AllowRule(runner, firewall.Rule{Port: "80", Proto: "tcp", Comment: "setup http"})
+	case runHTTPS:
+		return firewall.AllowRule(runner, firewall.Rule{Port: "443", Proto: "tcp", Comment: "setup https"})
+	case runMosh:
+		return firewall.AllowRule(runner, firewall.Rule{Port: "60000:61000", Proto: "udp", Comment: "setup mosh"})
+	case runFail2Ban:
+		return security.InstallFail2Ban(runner, security.DefaultFail2BanOptions())
+	case runDockerLog:
+		return dockermaint.ConfigureLogRotation(runner, dockermaint.DefaultLogRotationOptions())
+	case runDoctor:
+		setupexec.PrintOutput(diagnostics.Format(diagnostics.Run(runner)))
+		return nil
+	case runUpdates:
+		out, err := updates.Check(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
 	case runToolDeps:
 		return tools.InstallDependencies(runner)
 	case runTool:
@@ -131,6 +158,24 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 		return devtools.InstallGo(runner)
 	case runNode:
 		return devtools.InstallNode(runner, username)
+	case runRust:
+		return devtools.InstallRust(runner, username)
+	case runGoLint:
+		return devtools.InstallGoLint(runner)
+	case runGoRel:
+		return devtools.InstallGoReleaser(runner)
+	case runGoVuln:
+		if err := devtools.InstallGo(runner); err != nil {
+			return err
+		}
+		return devtools.InstallGoVulnCheck(runner)
+	case runPnpm:
+		if !m.selections.DevTools.Node {
+			if err := devtools.InstallNode(runner, username); err != nil {
+				return err
+			}
+		}
+		return devtools.InstallPnpm(runner, username)
 	default:
 		return nil
 	}

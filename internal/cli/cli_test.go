@@ -261,6 +261,59 @@ func TestRunDryRunFull(t *testing.T) {
 	}
 }
 
+func TestRunFirewallAllow(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{
+		"setup", "firewall", "allow",
+		"--port", "443",
+		"--proto", "tcp",
+		"--from", "10.0.0.0/24",
+		"--comment", "web",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(dryBuf.String(), "ufw allow from 10.0.0.0/24 to any port 443 proto tcp comment web") {
+		t.Fatalf("unexpected output: %s", dryBuf.String())
+	}
+}
+
+func TestRunDockerLogsConfig(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "docker", "logs-config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "systemctl restart docker") {
+		t.Fatalf("expected docker restart in output: %s", dryBuf.String())
+	}
+}
+
+func TestRunDevToolsPnpmInstallsNodeFirst(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "devtools", "--user", "dev", "--pnpm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := dryBuf.String()
+	if !strings.Contains(output, "fnm") || !strings.Contains(output, "pnpm") {
+		t.Fatalf("expected node and pnpm commands in output: %s", output)
+	}
+}
+
 func TestRunAddUserMissingFlags(t *testing.T) {
 	app := BuildApp(false, nil)
 

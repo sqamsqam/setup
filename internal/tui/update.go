@@ -340,6 +340,44 @@ func (m *model) togglePlanItem(id planItemID) {
 		m.selections.Bootstrap = !m.selections.Bootstrap
 	case itemAddUser:
 		m.selections.AddUser = !m.selections.AddUser
+	case itemManageAll:
+		if m.selections.FirewallBaseline && m.selections.FirewallHTTP && m.selections.FirewallHTTPS &&
+			m.selections.FirewallMosh && m.selections.Fail2Ban && m.selections.DockerLogRotation &&
+			m.selections.Diagnostics && m.selections.UpdatesCheck {
+			m.selections.FirewallBaseline = false
+			m.selections.FirewallHTTP = false
+			m.selections.FirewallHTTPS = false
+			m.selections.FirewallMosh = false
+			m.selections.Fail2Ban = false
+			m.selections.DockerLogRotation = false
+			m.selections.Diagnostics = false
+			m.selections.UpdatesCheck = false
+		} else {
+			m.selections.FirewallBaseline = true
+			m.selections.FirewallHTTP = true
+			m.selections.FirewallHTTPS = true
+			m.selections.FirewallMosh = true
+			m.selections.Fail2Ban = true
+			m.selections.DockerLogRotation = true
+			m.selections.Diagnostics = true
+			m.selections.UpdatesCheck = true
+		}
+	case itemFirewall:
+		m.selections.FirewallBaseline = !m.selections.FirewallBaseline
+	case itemHTTP:
+		m.selections.FirewallHTTP = !m.selections.FirewallHTTP
+	case itemHTTPS:
+		m.selections.FirewallHTTPS = !m.selections.FirewallHTTPS
+	case itemMosh:
+		m.selections.FirewallMosh = !m.selections.FirewallMosh
+	case itemFail2Ban:
+		m.selections.Fail2Ban = !m.selections.Fail2Ban
+	case itemDockerLog:
+		m.selections.DockerLogRotation = !m.selections.DockerLogRotation
+	case itemDoctor:
+		m.selections.Diagnostics = !m.selections.Diagnostics
+	case itemUpdates:
+		m.selections.UpdatesCheck = !m.selections.UpdatesCheck
 	case itemCLIAll:
 		if m.selections.Tools.Ripgrep && m.selections.Tools.Fd && m.selections.Tools.Bat &&
 			m.selections.Tools.Yq && m.selections.Tools.Glow && m.selections.Tools.Gh {
@@ -360,7 +398,9 @@ func (m *model) togglePlanItem(id planItemID) {
 	case itemGh:
 		m.selections.Tools.Gh = !m.selections.Tools.Gh
 	case itemDevAll:
-		if m.selections.DevTools.Go && m.selections.DevTools.Node {
+		if m.selections.DevTools.Go && m.selections.DevTools.Node && m.selections.DevTools.Rust &&
+			m.selections.DevTools.GoLint && m.selections.DevTools.GoReleaser &&
+			m.selections.DevTools.GoVulnCheck && m.selections.DevTools.Pnpm {
 			m.selections.DevTools = devtools.InstallOptions{}
 		} else {
 			m.selections.DevTools = devtools.AllInstallOptions()
@@ -369,6 +409,16 @@ func (m *model) togglePlanItem(id planItemID) {
 		m.selections.DevTools.Go = !m.selections.DevTools.Go
 	case itemNode:
 		m.selections.DevTools.Node = !m.selections.DevTools.Node
+	case itemRust:
+		m.selections.DevTools.Rust = !m.selections.DevTools.Rust
+	case itemGoLint:
+		m.selections.DevTools.GoLint = !m.selections.DevTools.GoLint
+	case itemGoRel:
+		m.selections.DevTools.GoReleaser = !m.selections.DevTools.GoReleaser
+	case itemGoVuln:
+		m.selections.DevTools.GoVulnCheck = !m.selections.DevTools.GoVulnCheck
+	case itemPnpm:
+		m.selections.DevTools.Pnpm = !m.selections.DevTools.Pnpm
 	}
 }
 
@@ -474,6 +524,62 @@ func (m model) buildRunSteps() []runStep {
 			desc: "Create sudo user, install SSH key, update AllowUsers",
 		})
 	}
+	if m.selections.FirewallBaseline {
+		steps = append(steps, runStep{
+			id:   runFirewall,
+			name: "Configure UFW Firewall",
+			desc: "Default deny incoming, allow outgoing, allow SSH, enable UFW",
+		})
+	}
+	if m.selections.FirewallHTTP {
+		steps = append(steps, runStep{
+			id:   runHTTP,
+			name: "Allow HTTP",
+			desc: "Allow tcp/80 through UFW",
+		})
+	}
+	if m.selections.FirewallHTTPS {
+		steps = append(steps, runStep{
+			id:   runHTTPS,
+			name: "Allow HTTPS",
+			desc: "Allow tcp/443 through UFW",
+		})
+	}
+	if m.selections.FirewallMosh {
+		steps = append(steps, runStep{
+			id:   runMosh,
+			name: "Allow Mosh",
+			desc: "Allow udp/60000:61000 through UFW",
+		})
+	}
+	if m.selections.Fail2Ban {
+		steps = append(steps, runStep{
+			id:   runFail2Ban,
+			name: "Configure fail2ban",
+			desc: "Install fail2ban and enable the sshd jail",
+		})
+	}
+	if m.selections.DockerLogRotation {
+		steps = append(steps, runStep{
+			id:   runDockerLog,
+			name: "Configure Docker Log Rotation",
+			desc: "Merge json-file log rotation into /etc/docker/daemon.json",
+		})
+	}
+	if m.selections.Diagnostics {
+		steps = append(steps, runStep{
+			id:   runDoctor,
+			name: "Run Doctor Diagnostics",
+			desc: "Read-only instance health and environment checks",
+		})
+	}
+	if m.selections.UpdatesCheck {
+		steps = append(steps, runStep{
+			id:   runUpdates,
+			name: "Check Package Updates",
+			desc: "Refresh apt metadata and list upgradable packages",
+		})
+	}
 	if m.selections.Tools.Any() {
 		steps = append(steps, runStep{
 			id:   runToolDeps,
@@ -501,6 +607,41 @@ func (m model) buildRunSteps() []runStep {
 			id:   runNode,
 			name: "Install Node.js",
 			desc: "Per-user fnm, Node.js, corepack, TypeScript, and tsx",
+		})
+	}
+	if m.selections.DevTools.Rust {
+		steps = append(steps, runStep{
+			id:   runRust,
+			name: "Install Rust",
+			desc: "Per-user stable Rust via rustup",
+		})
+	}
+	if m.selections.DevTools.GoLint {
+		steps = append(steps, runStep{
+			id:   runGoLint,
+			name: "Install golangci-lint",
+			desc: "Verified release archive to /usr/local/bin",
+		})
+	}
+	if m.selections.DevTools.GoReleaser {
+		steps = append(steps, runStep{
+			id:   runGoRel,
+			name: "Install GoReleaser",
+			desc: "Verified release archive to /usr/local/bin",
+		})
+	}
+	if m.selections.DevTools.GoVulnCheck {
+		steps = append(steps, runStep{
+			id:   runGoVuln,
+			name: "Install govulncheck",
+			desc: "Official Go vulnerability scanner",
+		})
+	}
+	if m.selections.DevTools.Pnpm {
+		steps = append(steps, runStep{
+			id:   runPnpm,
+			name: "Install pnpm",
+			desc: "Corepack-managed pnpm for the target user",
 		})
 	}
 	return steps

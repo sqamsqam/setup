@@ -50,6 +50,51 @@ func (d *DryRunner) Output(name string, args ...string) (string, error) {
 		if len(args) >= 2 && strings.Contains(args[1], "VERSION_CODENAME") {
 			return "plucky", nil
 		}
+		if len(args) >= 2 && strings.Contains(args[1], "PRETTY_NAME") {
+			return "Ubuntu 26.04 LTS", nil
+		}
+		if len(args) >= 2 && strings.Contains(args[1], "reboot-required") {
+			return "Reboot not required.", nil
+		}
+		if len(args) >= 2 && strings.Contains(args[1], "apt list --upgradable") {
+			return "No upgradable packages reported.", nil
+		}
+		if len(args) >= 2 && strings.Contains(args[1], "fuser") {
+			return "clear", nil
+		}
+	case "systemd-detect-virt":
+		return "lxc", nil
+	case "systemctl":
+		if len(args) > 0 {
+			switch args[0] {
+			case "is-system-running":
+				return "running", nil
+			case "is-active":
+				return "active", nil
+			case "--failed":
+				return "0 loaded units listed.", nil
+			case "status":
+				return "active (running)", nil
+			}
+		}
+	case "stat":
+		return "cgroup2fs", nil
+	case "df":
+		return "Filesystem      Size  Used Avail Use% Mounted on\n/dev/root        20G  5G   15G  25% /", nil
+	case "ss":
+		return "Netid State  Local Address:Port\ntcp   LISTEN 0.0.0.0:22", nil
+	case "sshd":
+		if len(args) > 0 && args[0] == "-T" {
+			return "port 22", nil
+		}
+	case "ufw":
+		return "Status: inactive", nil
+	case "docker":
+		if len(args) >= 2 && args[0] == "system" && args[1] == "df" {
+			return "TYPE            TOTAL     ACTIVE    SIZE\nImages          0         0         0B", nil
+		}
+	case "fail2ban-client":
+		return "Status for the jail: sshd", nil
 	}
 
 	return "", nil

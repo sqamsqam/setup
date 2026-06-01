@@ -9,9 +9,15 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/sqamsqam/setup/internal/devtools"
+	"github.com/sqamsqam/setup/internal/diagnostics"
+	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	"github.com/sqamsqam/setup/internal/firewall"
+	"github.com/sqamsqam/setup/internal/security"
+	"github.com/sqamsqam/setup/internal/service"
 	"github.com/sqamsqam/setup/internal/system"
 	"github.com/sqamsqam/setup/internal/tools"
+	"github.com/sqamsqam/setup/internal/updates"
 	"github.com/sqamsqam/setup/internal/user"
 )
 
@@ -51,6 +57,12 @@ func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 			addUserCmd(dryRun, runnerFactory),
 			installToolsCmd(dryRun, runnerFactory),
 			devToolsCmd(dryRun, runnerFactory),
+			doctorCmd(dryRun, runnerFactory),
+			firewallCmd(dryRun, runnerFactory),
+			fail2banCmd(dryRun, runnerFactory),
+			dockerCmd(dryRun, runnerFactory),
+			updatesCmd(dryRun, runnerFactory),
+			serviceCmd(dryRun, runnerFactory),
 			fullCmd(dryRun, runnerFactory),
 			versionCmd(),
 		},
@@ -160,7 +172,7 @@ func devToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "devtools",
 		Aliases: []string{"d"},
-		Usage:   "Install Go (system-wide) and Node.js (per-user)",
+		Usage:   "Install Go, Node.js, Rust, and ecosystem tools",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "user",
@@ -180,31 +192,379 @@ func devToolsCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "node",
 				Usage: "Install Node.js only",
 			},
+			&cli.BoolFlag{
+				Name:  "rust",
+				Usage: "Install Rust via rustup for the target user",
+			},
+			&cli.BoolFlag{
+				Name:  "go-lint",
+				Usage: "Install golangci-lint",
+			},
+			&cli.BoolFlag{
+				Name:  "goreleaser",
+				Usage: "Install GoReleaser",
+			},
+			&cli.BoolFlag{
+				Name:  "govulncheck",
+				Usage: "Install govulncheck",
+			},
+			&cli.BoolFlag{
+				Name:  "pnpm",
+				Usage: "Install pnpm via Corepack for the target user",
+			},
 		},
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 			username := cmd.String("user")
-			goOnly := cmd.Bool("go")
-			nodeOnly := cmd.Bool("node")
-			all := cmd.Bool("all")
+			opts := devtools.InstallOptions{
+				Go:          cmd.Bool("go"),
+				Node:        cmd.Bool("node"),
+				Rust:        cmd.Bool("rust"),
+				GoLint:      cmd.Bool("go-lint"),
+				GoReleaser:  cmd.Bool("goreleaser"),
+				GoVulnCheck: cmd.Bool("govulncheck"),
+				Pnpm:        cmd.Bool("pnpm"),
+			}
+			if cmd.Bool("all") {
+				opts = devtools.AllInstallOptions()
+			} else if !opts.Any() {
+				opts = devtools.DefaultInstallOptions()
+			}
+			return devtools.InstallSelected(runnerFactory(commandDryRun(cmd, dryRun)), username, opts)
+		}),
+	}
+}
 
-			if all || (!goOnly && !nodeOnly) {
-				goOnly = true
-				nodeOnly = true
-			}
-
-			runner := runnerFactory(commandDryRun(cmd, dryRun))
-			if goOnly {
-				if err := devtools.InstallGo(runner); err != nil {
-					return err
-				}
-			}
-			if nodeOnly {
-				if err := devtools.InstallNode(runner, username); err != nil {
-					return err
-				}
-			}
+func doctorCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "doctor",
+		Usage: "Run read-only instance diagnostics",
+		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+			report := diagnostics.Run(runnerFactory(commandDryRun(cmd, dryRun)))
+			fmt.Println(diagnostics.Format(report))
 			return nil
 		}),
+	}
+}
+
+func firewallCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "firewall",
+		Usage: "Manage UFW firewall rules",
+		Commands: []*cli.Command{
+			{
+				Name:  "status",
+				Usage: "Show UFW status",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := firewall.Status(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "numbered",
+				Usage: "Show numbered UFW rules",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := firewall.StatusNumbered(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "enable",
+				Usage: "Install and enable UFW with safe defaults",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "allow-ssh", Usage: "Allow the detected SSH port before enabling", Value: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.EnableBaseline(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Bool("allow-ssh"))
+				}),
+			},
+			{
+				Name:  "allow",
+				Usage: "Allow a TCP or UDP port",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "port", Usage: "Port or port range, e.g. 443 or 60000:61000", Required: true},
+					&cli.StringFlag{Name: "proto", Usage: "Protocol: tcp or udp", Value: "tcp"},
+					&cli.StringFlag{Name: "from", Usage: "Optional source IP or CIDR"},
+					&cli.StringFlag{Name: "comment", Usage: "Optional UFW rule comment"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.AllowRule(runnerFactory(commandDryRun(cmd, dryRun)), firewall.Rule{
+						Port:    cmd.String("port"),
+						Proto:   cmd.String("proto"),
+						From:    cmd.String("from"),
+						Comment: cmd.String("comment"),
+					})
+				}),
+			},
+			{
+				Name:  "delete",
+				Usage: "Delete a numbered UFW rule",
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "number", Usage: "Rule number from firewall numbered", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.DeleteRule(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Int("number"))
+				}),
+			},
+			{
+				Name:  "reset",
+				Usage: "Reset UFW rules",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.Reset(runnerFactory(commandDryRun(cmd, dryRun)))
+				}),
+			},
+		},
+	}
+}
+
+func fail2banCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "fail2ban",
+		Usage: "Manage fail2ban SSH protection",
+		Commands: []*cli.Command{
+			{
+				Name:  "install",
+				Usage: "Install fail2ban and configure the SSH jail",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "bantime", Value: "1h", Usage: "Ban duration"},
+					&cli.StringFlag{Name: "findtime", Value: "10m", Usage: "Retry window"},
+					&cli.IntFlag{Name: "maxretry", Value: 5, Usage: "Maximum retries before ban"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return security.InstallFail2Ban(runnerFactory(commandDryRun(cmd, dryRun)), security.Fail2BanOptions{
+						BanTime:  cmd.String("bantime"),
+						FindTime: cmd.String("findtime"),
+						MaxRetry: cmd.Int("maxretry"),
+					})
+				}),
+			},
+			{
+				Name:  "status",
+				Usage: "Show fail2ban SSH jail status",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := security.Fail2BanStatus(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "unban",
+				Usage: "Unban an IP address from the SSH jail",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "ip", Usage: "IP address to unban", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return security.UnbanIP(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("ip"))
+				}),
+			},
+		},
+	}
+}
+
+func dockerCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "docker",
+		Usage: "Manage Docker maintenance tasks",
+		Commands: []*cli.Command{
+			{
+				Name:  "logs-config",
+				Usage: "Configure Docker json-file log rotation",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "max-size", Value: "10m", Usage: "Maximum log file size"},
+					&cli.StringFlag{Name: "max-file", Value: "3", Usage: "Maximum rotated log files"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return dockermaint.ConfigureLogRotation(runnerFactory(commandDryRun(cmd, dryRun)), dockermaint.LogRotationOptions{
+						MaxSize: cmd.String("max-size"),
+						MaxFile: cmd.String("max-file"),
+					})
+				}),
+			},
+			{
+				Name:  "disk",
+				Usage: "Show Docker disk usage",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := dockermaint.DiskUsage(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "prune",
+				Usage: "Prune selected Docker resources",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "containers", Usage: "Prune stopped containers"},
+					&cli.BoolFlag{Name: "images", Usage: "Prune dangling images"},
+					&cli.BoolFlag{Name: "build-cache", Usage: "Prune build cache"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return dockermaint.Prune(runnerFactory(commandDryRun(cmd, dryRun)), dockermaint.PruneOptions{
+						Containers: cmd.Bool("containers"),
+						Images:     cmd.Bool("images"),
+						BuildCache: cmd.Bool("build-cache"),
+					})
+				}),
+			},
+		},
+	}
+}
+
+func updatesCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "updates",
+		Usage: "Manage package updates and reboot checks",
+		Commands: []*cli.Command{
+			{
+				Name:  "check",
+				Usage: "Update apt metadata and list upgradable packages",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := updates.Check(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "upgrade",
+				Usage: "Run apt full-upgrade",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return updates.Upgrade(runnerFactory(commandDryRun(cmd, dryRun)))
+				}),
+			},
+			{
+				Name:  "reboot-required",
+				Usage: "Show whether a reboot is required",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := updates.RebootRequired(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "unattended-status",
+				Usage: "Show unattended-upgrades service status",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := updates.UnattendedStatus(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "failed-units",
+				Usage: "Show failed systemd units",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := updates.FailedUnits(runnerFactory(commandDryRun(cmd, dryRun)))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "reboot",
+				Usage: "Reboot the instance",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm reboot"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return updates.Reboot(runnerFactory(commandDryRun(cmd, dryRun)), cmd.Bool("yes"))
+				}),
+			},
+		},
+	}
+}
+
+func serviceCmd(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
+	return &cli.Command{
+		Name:  "service",
+		Usage: "Manage setup-created per-user systemd services",
+		Commands: []*cli.Command{
+			{
+				Name:  "create",
+				Usage: "Create and start a managed per-user systemd service",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+					&cli.StringFlag{Name: "workdir", Usage: "Absolute working directory", Required: true},
+					&cli.StringFlag{Name: "cmd", Usage: "Command to run", Required: true},
+					&cli.StringFlag{Name: "env-file", Usage: "Optional absolute EnvironmentFile path"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return service.Create(runnerFactory(commandDryRun(cmd, dryRun)), service.Config{
+						User:    cmd.String("user"),
+						Name:    cmd.String("name"),
+						WorkDir: cmd.String("workdir"),
+						Command: cmd.String("cmd"),
+						EnvFile: cmd.String("env-file"),
+					})
+				}),
+			},
+			{
+				Name:  "status",
+				Usage: "Show a managed user service status",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := service.Status(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "logs",
+				Usage: "Show recent managed user service logs",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					out, err := service.Logs(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+					return nil
+				}),
+			},
+			{
+				Name:  "restart",
+				Usage: "Restart a managed user service",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return service.Restart(runnerFactory(commandDryRun(cmd, dryRun)), cmd.String("user"), cmd.String("name"))
+				}),
+			},
+		},
 	}
 }
 
