@@ -3,6 +3,8 @@ package exec
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -264,4 +266,73 @@ func TestRealRunnerLookupUser(t *testing.T) {
 			t.Error("expected error for nonexistent user")
 		}
 	})
+}
+
+func TestRealRunnerUsesSafePathForOutput(t *testing.T) {
+	fakeDir := t.TempDir()
+	writeExecutable(t, filepath.Join(fakeDir, "sh"), "#!/bin/sh\nprintf hijacked\n")
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runner := NewRealRunner()
+	out, err := runner.Output("sh", "-c", "printf safe")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != "safe" {
+		t.Fatalf("expected safe command output, got %q", out)
+	}
+}
+
+func TestRealRunnerUsesSafePathForShell(t *testing.T) {
+	fakeDir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "hijacked")
+	writeExecutable(t, filepath.Join(fakeDir, "bash"), "#!/bin/sh\ntouch "+marker+"\n")
+	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runner := NewRealRunner()
+	if err := runner.Shell("true"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("expected fake bash not to run, stat err=%v", err)
+	}
+}
+
+func TestRealRunnerSetsSafePathAndPreservesOtherEnv(t *testing.T) {
+	fakeDir := t.TempDir()
+	t.Setenv("PATH", fakeDir)
+	t.Setenv("SETUP_TEST_ENV", "preserved")
+
+	runner := NewRealRunner()
+	if got := envValue(runner.Env, "PATH"); got != safePath {
+		t.Fatalf("expected PATH %q, got %q", safePath, got)
+	}
+	if got := envValue(runner.Env, "SETUP_TEST_ENV"); got != "preserved" {
+		t.Fatalf("expected SETUP_TEST_ENV to be preserved, got %q", got)
+	}
+
+	out, err := runner.Output("sh", "-c", "printf %s \"$SETUP_TEST_ENV\"")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != "preserved" {
+		t.Fatalf("expected child env to be preserved, got %q", out)
+	}
+}
+
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+}
+
+func envValue(env []string, key string) string {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
 }

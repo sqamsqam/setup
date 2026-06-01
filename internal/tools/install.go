@@ -256,9 +256,15 @@ func installGlow(runner setupexec.CmdRunner) error {
 		return err
 	}
 
+	tmpKeyring, err := runner.CreateTemp(filepath.Dir(keyringPath), ".setup-charm-keyring-*.gpg")
+	if err != nil {
+		return fmt.Errorf("create temp charm gpg key: %w", err)
+	}
+	defer func() { _ = runner.Remove(tmpKeyring) }()
+
 	keyScript := fmt.Sprintf(
 		"curl -fsSL https://repo.charm.sh/apt/gpg.key | gpg --dearmor -o %s",
-		keyringPath,
+		shellQuote(tmpKeyring),
 	)
 	if err := runner.Shell(keyScript); err != nil {
 		return fmt.Errorf("download charm gpg key: %w", err)
@@ -266,24 +272,15 @@ func installGlow(runner setupexec.CmdRunner) error {
 
 	if !setupexec.IsDryRun(runner) {
 		const charmFingerprint = "F506 F2D6 02D1 C400 A1E4  5D96 7E2E 87C7 1D5E 9D67"
-		out, err := runner.Output("gpg", "--show-keys", "--with-fingerprint", "--with-colons", keyringPath)
-		if err != nil {
+		if err := verifyGPGFingerprint(runner, tmpKeyring, charmFingerprint); err != nil {
 			return fmt.Errorf("verify charm gpg key: %w", err)
 		}
-		normalizedExpected := strings.ReplaceAll(charmFingerprint, " ", "")
-		found := false
-		for _, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "fpr:") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 10 && parts[9] == normalizedExpected {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
-			return fmt.Errorf("charm gpg key fingerprint mismatch")
-		}
+	}
+	if err := runner.Chmod(tmpKeyring, 0644); err != nil {
+		return err
+	}
+	if err := runner.Rename(tmpKeyring, keyringPath); err != nil {
+		return err
 	}
 
 	listContent := fmt.Sprintf("deb [signed-by=%s] https://repo.charm.sh/apt/ * *\n", keyringPath)
@@ -314,35 +311,28 @@ func installGh(runner setupexec.CmdRunner) error {
 		return err
 	}
 
-	if err := runner.Run("wget", "-nv", "-O", keyringPath, "https://cli.github.com/packages/githubcli-archive-keyring.gpg"); err != nil {
-		return fmt.Errorf("download gh gpg key: %w", err)
+	tmpKeyring, err := runner.CreateTemp(filepath.Dir(keyringPath), ".setup-github-cli-keyring-*.gpg")
+	if err != nil {
+		return fmt.Errorf("create temp gh gpg key: %w", err)
 	}
+	defer func() { _ = runner.Remove(tmpKeyring) }()
 
-	if err := runner.Chmod(keyringPath, 0644); err != nil {
-		return err
+	if err := runner.Run("wget", "-nv", "-O", tmpKeyring, "https://cli.github.com/packages/githubcli-archive-keyring.gpg"); err != nil {
+		return fmt.Errorf("download gh gpg key: %w", err)
 	}
 
 	// Verify GitHub CLI GPG key fingerprint
 	if !setupexec.IsDryRun(runner) {
 		const ghFingerprint = "23F3 D1D8 6577 3DE1 7D9D  8C30 A7B6 3A2B 8F85 411F"
-		out, err := runner.Output("gpg", "--show-keys", "--with-fingerprint", "--with-colons", keyringPath)
-		if err != nil {
+		if err := verifyGPGFingerprint(runner, tmpKeyring, ghFingerprint); err != nil {
 			return fmt.Errorf("verify gh gpg key: %w", err)
 		}
-		normalizedExpected := strings.ReplaceAll(ghFingerprint, " ", "")
-		found := false
-		for _, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "fpr:") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 10 && parts[9] == normalizedExpected {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
-			return fmt.Errorf("GitHub CLI gpg key fingerprint mismatch")
-		}
+	}
+	if err := runner.Chmod(tmpKeyring, 0644); err != nil {
+		return err
+	}
+	if err := runner.Rename(tmpKeyring, keyringPath); err != nil {
+		return err
 	}
 
 	arch, err := runner.Output("dpkg", "--print-architecture")
@@ -372,6 +362,27 @@ func installGh(runner setupexec.CmdRunner) error {
 		return err
 	}
 	return runner.Run("apt", "install", "-y", "gh")
+}
+
+func verifyGPGFingerprint(runner setupexec.CmdRunner, keyringPath, expectedFingerprint string) error {
+	out, err := runner.Output("gpg", "--show-keys", "--with-fingerprint", "--with-colons", keyringPath)
+	if err != nil {
+		return err
+	}
+	normalizedExpected := strings.ReplaceAll(expectedFingerprint, " ", "")
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "fpr:") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 10 && parts[9] == normalizedExpected {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("fingerprint mismatch")
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func verifySHA256File(runner setupexec.CmdRunner, path, expected string) error {

@@ -56,6 +56,33 @@ func TestVersionFlag(t *testing.T) {
 	}
 }
 
+func TestDefaultRunnerPreservesSafePathWhenAddingAptEnv(t *testing.T) {
+	t.Setenv("PATH", "/tmp/attacker")
+
+	runner := defaultRunner(false)
+	real, ok := runner.(*setupexec.RealRunner)
+	if !ok {
+		t.Fatalf("defaultRunner(false) = %T, want *exec.RealRunner", runner)
+	}
+
+	if got := envValue(real.Env, "PATH"); strings.HasPrefix(got, "/tmp/attacker") {
+		t.Fatalf("default runner preserved unsafe PATH %q", got)
+	}
+	if got := envValue(real.Env, "DEBIAN_FRONTEND"); got != "noninteractive" {
+		t.Fatalf("DEBIAN_FRONTEND = %q, want noninteractive", got)
+	}
+}
+
+func envValue(env []string, key string) string {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
+}
+
 func TestHelpOutput(t *testing.T) {
 	app := BuildApp(false, nil)
 

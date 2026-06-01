@@ -66,7 +66,7 @@ func defaultRunner(dryRun bool) setupexec.CmdRunner {
 		return setupexec.NewDryRunner()
 	}
 	real := setupexec.NewRealRunner()
-	real.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	real.Env = append(real.Env, "DEBIAN_FRONTEND=noninteractive")
 	return real
 }
 

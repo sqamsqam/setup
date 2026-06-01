@@ -1,16 +1,20 @@
 package exec
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	osexec "os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 var printWriter io.Writer = os.Stderr
+
+const safePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 func SetPrintWriter(w io.Writer) {
 	printWriter = w
@@ -53,12 +57,16 @@ type RealRunner struct {
 
 func NewRealRunner() *RealRunner {
 	return &RealRunner{
-		Env: os.Environ(),
+		Env: safeEnv(os.Environ()),
 	}
 }
 
 func (r *RealRunner) Run(name string, args ...string) error {
-	cmd := osexec.Command(name, args...)
+	path, err := safeCommandPath(name)
+	if err != nil {
+		return err
+	}
+	cmd := osexec.Command(path, args...)
 	cmd.Env = r.Env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -67,7 +75,11 @@ func (r *RealRunner) Run(name string, args ...string) error {
 }
 
 func (r *RealRunner) Output(name string, args ...string) (string, error) {
-	cmd := osexec.Command(name, args...)
+	path, err := safeCommandPath(name)
+	if err != nil {
+		return "", err
+	}
+	cmd := osexec.Command(path, args...)
 	cmd.Env = r.Env
 	cmd.Stdin = nil
 	out, err := cmd.Output()
@@ -83,12 +95,56 @@ func (r *RealRunner) RunAsUser(user, name string, args ...string) error {
 }
 
 func (r *RealRunner) Shell(script string) error {
-	cmd := osexec.Command("bash", "-c", script)
+	path, err := safeCommandPath("bash")
+	if err != nil {
+		return err
+	}
+	cmd := osexec.Command(path, "-c", script)
 	cmd.Env = r.Env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func safeEnv(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	sawPath := false
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			if !sawPath {
+				out = append(out, "PATH="+safePath)
+				sawPath = true
+			}
+			continue
+		}
+		out = append(out, entry)
+	}
+	if !sawPath {
+		out = append(out, "PATH="+safePath)
+	}
+	return out
+}
+
+func safeCommandPath(name string) (string, error) {
+	if strings.ContainsRune(name, os.PathSeparator) {
+		return name, nil
+	}
+	for _, dir := range filepath.SplitList(safePath) {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return "", err
+		}
+		if info.IsDir() || info.Mode().Perm()&0111 == 0 {
+			continue
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf("executable %q not found in safe PATH", name)
 }
 
 func (r *RealRunner) WriteFile(path string, data []byte, perm os.FileMode) error {
@@ -159,7 +215,7 @@ func (r *RealRunner) LookupUser(username string) (uid, gid int, err error) {
 const DefaultTimezone = "UTC"
 
 func CheckCommand(cmd string) bool {
-	_, err := osexec.LookPath(cmd)
+	_, err := safeCommandPath(cmd)
 	return err == nil
 }
 

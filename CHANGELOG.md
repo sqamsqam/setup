@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-01
+
+### Security
+- Root command execution now uses a fixed safe PATH instead of the caller's inherited PATH.
+- Charm and GitHub CLI apt keys are verified from temporary keyring files before replacing trusted keyring paths.
+
 ## [0.4.1] - 2026-06-01
 
 ### Fixed
@@ -101,6 +107,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.4.2]: https://github.com/sqamsqam/setup/releases/tag/v0.4.2
 [0.4.1]: https://github.com/sqamsqam/setup/releases/tag/v0.4.1
 [0.4.0]: https://github.com/sqamsqam/setup/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sqamsqam/setup/releases/tag/v0.3.0

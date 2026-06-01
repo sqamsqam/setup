@@ -205,9 +205,12 @@ internal/
 - Dry-run mode logs all shell commands without executing them
 - No interactive prompts in CLI mode
 - `DEBIAN_FRONTEND=noninteractive` is set for all apt operations
+- Commands run through a fixed safe PATH instead of trusting the caller's PATH
 - Go downloads are verified against the official SHA256 checksum
 - Docker is installed through the official apt repository after GPG fingerprint
   verification
+- Third-party apt keys are verified from temporary keyrings before replacing
+  trusted keyring paths
 - fnm is installed from a pinned release zip with SHA256 verification
 - `AllowUsers` is managed from local non-system users (UID >= 1000), so review
   local account state before running on a reused container
