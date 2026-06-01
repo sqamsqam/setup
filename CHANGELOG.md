@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-01
+
+### Fixed
+- Release binary asset name is now `setup-linux-amd64` instead of including version, OS, and architecture suffixes.
+
 ## [0.4.0] - 2026-06-01
 
 ### Added
@@ -96,6 +101,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.4.1]: https://github.com/sqamsqam/setup/releases/tag/v0.4.1
 [0.4.0]: https://github.com/sqamsqam/setup/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sqamsqam/setup/releases/tag/v0.3.0
 [0.2.0]: https://github.com/sqamsqam/setup/releases/tag/v0.2.0
