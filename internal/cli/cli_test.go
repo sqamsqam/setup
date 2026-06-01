@@ -122,7 +122,7 @@ func TestRunBootstrap(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	err := app.Run(context.Background(), []string{"setup", "bootstrap"})
+	err := app.Run(context.Background(), []string{"setup", "base"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestRunBootstrapWithTimezoneEqualsFlag(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--timezone=America/New_York"})
+	err := app.Run(context.Background(), []string{"setup", "base", "--timezone=America/New_York"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRunBootstrapWithTimezoneSpaceFlag(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--timezone", "America/New_York"})
+	err := app.Run(context.Background(), []string{"setup", "base", "--timezone", "America/New_York"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestRunBootstrapWithShortFlag(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	err := app.Run(context.Background(), []string{"setup", "bootstrap", "-t", "Europe/London"})
+	err := app.Run(context.Background(), []string{"setup", "base", "-t", "Europe/London"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestRunAddUser(t *testing.T) {
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
 	err := app.Run(context.Background(), []string{
-		"setup", "add-user",
+		"setup", "user",
 		"--user", "testuser",
 		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
 	})
@@ -234,7 +234,7 @@ func TestRunAddUserShortFlags(t *testing.T) {
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
 	err := app.Run(context.Background(), []string{
-		"setup", "add-user",
+		"setup", "user",
 		"-u", "shorty",
 		"-k", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
 	})
@@ -257,7 +257,7 @@ func TestRunDryRunFull(t *testing.T) {
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
 	err := app.Run(context.Background(), []string{
-		"setup", "full",
+		"setup", "fresh",
 		"--user", "test",
 		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
 	})
@@ -281,7 +281,7 @@ func TestRunFirewallAllow(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 	err := app.Run(context.Background(), []string{
-		"setup", "firewall", "allow",
+		"setup", "network", "allow",
 		"--port", "443",
 		"--proto", "tcp",
 		"--from", "10.0.0.0/24",
@@ -302,7 +302,7 @@ func TestRunDockerLogsConfig(t *testing.T) {
 	setupexec.SetPrintWriter(io.Discard)
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
-	err := app.Run(context.Background(), []string{"setup", "docker", "logs-config"})
+	err := app.Run(context.Background(), []string{"setup", "containers", "log-rotation"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestRunDevToolsPnpmInstallsNodeFirst(t *testing.T) {
 	setupexec.SetPrintWriter(io.Discard)
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
-	err := app.Run(context.Background(), []string{"setup", "devtools", "--user", "dev", "--pnpm"})
+	err := app.Run(context.Background(), []string{"setup", "dev", "--user", "dev", "--pnpm"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestRunDevToolsPnpmInstallsNodeFirst(t *testing.T) {
 func TestRunAddUserMissingFlags(t *testing.T) {
 	app := BuildApp(false, nil)
 
-	err := app.Run(context.Background(), []string{"setup", "add-user"})
+	err := app.Run(context.Background(), []string{"setup", "user"})
 	if err == nil {
 		t.Fatal("expected error for missing required flags")
 	}
@@ -339,7 +339,7 @@ func TestRunAddUserMissingFlags(t *testing.T) {
 func TestRunAddUserMissingKey(t *testing.T) {
 	app := BuildApp(false, nil)
 
-	err := app.Run(context.Background(), []string{"setup", "add-user", "--user", "test"})
+	err := app.Run(context.Background(), []string{"setup", "user", "--user", "test"})
 	if err == nil {
 		t.Fatal("expected error for missing key")
 	}
@@ -359,7 +359,7 @@ func TestRunAddUserRejectsKeyAndKeyFile(t *testing.T) {
 
 	app := BuildApp(false, nil)
 	err = app.Run(context.Background(), []string{
-		"setup", "add-user",
+		"setup", "user",
 		"--user", "test",
 		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
 		"--key-file", keyFile.Name(),
@@ -384,7 +384,7 @@ func TestRunUnknownCommand(t *testing.T) {
 func TestRunBootstrapUnknownFlag(t *testing.T) {
 	app := BuildApp(false, nil)
 
-	err := app.Run(context.Background(), []string{"setup", "bootstrap", "--unknown-flag"})
+	err := app.Run(context.Background(), []string{"setup", "base", "--unknown-flag"})
 	if err == nil {
 		t.Fatal("expected error for unknown flag")
 	}
@@ -398,7 +398,7 @@ func TestInstallTools(t *testing.T) {
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 
-	err := app.Run(context.Background(), []string{"setup", "install-tools"})
+	err := app.Run(context.Background(), []string{"setup", "tools"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func TestInstallTools(t *testing.T) {
 func TestDevToolsMissingUser(t *testing.T) {
 	app := BuildApp(false, nil)
 
-	err := app.Run(context.Background(), []string{"setup", "devtools"})
+	err := app.Run(context.Background(), []string{"setup", "dev"})
 	if err == nil {
 		t.Fatal("error expected for missing --user")
 	}

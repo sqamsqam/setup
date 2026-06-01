@@ -14,7 +14,7 @@ Set Framerate 24
 
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Ubuntu Dev Instance Setup/
+Wait+Screen /Fresh Ubuntu Instance Setup/
 Down 11
 Space
 Down 8
@@ -30,9 +30,9 @@ Enter
 Wait+Screen /SSH public key/
 Type "ssh-ed25519 AAAAAAAAAAAAAAAAAAAAAA== setup-demo"
 Enter
-Wait+Screen /Confirm Run/
+Wait+Screen /Review Plan/
 Enter
-Wait+Screen /Provisioning complete/
+Wait+Screen /Fresh setup complete/
 Sleep 800ms
 Screenshot "docs/assets/screenshots/success.png"
 Sleep 1s

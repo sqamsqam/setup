@@ -1,9 +1,11 @@
-.PHONY: build test vet lint check clean run-cli install-visual-tools visual-tools-check vhs-validate screenshots demo demo-gif golden-demo bake visual-test review-ui visual-clean
+.PHONY: prep test vet lint taste clean run-cli install-visual-tools visual-tools-check vhs-validate visual-screenshots visual-gifs visual-golden visual-test plate visual-clean bake
 
 NAME    := setup
 BIN_DIR := bin
 SRC     := ./cmd/setup
 VHS_VERSION ?= v0.11.0
+GORELEASER_VERSION ?= latest
+GORELEASER ?= $(shell command -v goreleaser 2>/dev/null || printf '%s' 'go run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)')
 export PATH := $(HOME)/go/bin:$(PATH)
 
 VERSION ?= dev
@@ -14,7 +16,7 @@ LDFLAGS := -s -w \
 	-X 'main.commit=$(COMMIT)' \
 	-X 'main.buildDate=$(DATE)'
 
-build:
+prep:
 	mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(NAME)-linux-amd64 $(SRC)
 
@@ -27,7 +29,7 @@ vet:
 lint:
 	golangci-lint run ./...
 
-check: vet test lint
+taste: vet test lint
 
 clean:
 	rm -rf $(BIN_DIR)
@@ -44,26 +46,25 @@ visual-tools-check:
 vhs-validate: visual-tools-check
 	vhs validate "demo/**/*.tape" "demo/*.tape"
 
-screenshots: build visual-tools-check
+visual-screenshots: prep visual-tools-check
 	mkdir -p docs/assets/screenshots
 	set -e; for tape in demo/screenshots/*.tape; do vhs "$$tape"; done
 
-demo: demo-gif
-
-demo-gif: build visual-tools-check
+visual-gifs: prep visual-tools-check
 	mkdir -p docs/assets/gifs
 	set -e; for tape in demo/navigation.tape demo/success.tape demo/error.tape; do vhs "$$tape"; done
 
-golden-demo: build visual-tools-check
+visual-golden: prep visual-tools-check
 	mkdir -p docs/assets
 	vhs demo/golden.tape
-
-bake: golden-demo
 
 visual-test: vhs-validate
 	scripts/validate-visual-assets.sh
 
-review-ui: install-visual-tools visual-clean build vhs-validate screenshots demo-gif golden-demo visual-test
+plate: install-visual-tools visual-clean prep vhs-validate visual-screenshots visual-gifs visual-golden visual-test
+
+bake: taste plate
+	$(GORELEASER) release --snapshot --clean
 
 visual-clean:
 	rm -rf docs/assets

@@ -13,3 +13,4 @@ Thumbs.db
 
 # Go
 bin/
+dist/

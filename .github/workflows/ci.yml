@@ -43,7 +43,7 @@ jobs:
           go-version: '1.26'
 
       - name: Generate visual assets
-        run: make review-ui
+        run: make plate
 
       - name: Upload visual assets
         uses: actions/upload-artifact@v4

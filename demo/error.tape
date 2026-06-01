@@ -14,7 +14,7 @@ Set Framerate 24
 
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Ubuntu Dev Instance Setup/
+Wait+Screen /Fresh Ubuntu Instance Setup/
 Enter
 Wait+Screen /Timezone/
 Enter

@@ -56,9 +56,9 @@ var (
 
 func (m model) mainMenuView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Ubuntu Dev Instance Setup"))
+	s.WriteString(titleStyle.Render("Fresh Ubuntu Instance Setup"))
 	s.WriteString("\n")
-	s.WriteString(subtitleStyle.Render("Choose bootstrap, management, CLI, and toolchain actions."))
+	s.WriteString(subtitleStyle.Render("Pick what this container needs, then review the plan."))
 	s.WriteString("\n\n")
 
 	if !m.dryRun && !m.demo && os.Geteuid() != 0 {
@@ -149,7 +149,7 @@ func (m model) inputKeyView() string {
 }
 
 func (m model) confirmView() string {
-	return m.page("Confirm Run", "Review the exact plan before provisioning starts.", m.confirm.View(), []key.Binding{keys.Continue, keys.Back, keys.Scroll, keys.Quit})
+	return m.page("Review Plan", "Check the exact plan before anything runs.", m.confirm.View(), []key.Binding{keys.Continue, keys.Back, keys.Scroll, keys.Quit})
 }
 
 func (m model) confirmBody() string {
@@ -207,7 +207,7 @@ func (m model) runningView() string {
 	var s strings.Builder
 	contentWidth := m.runContentWidth()
 
-	s.WriteString(titleStyle.Render("Running Provisioning"))
+	s.WriteString(titleStyle.Render("Getting Things Ready"))
 	if summary := m.currentStepSummary(); summary != "" {
 		s.WriteString("  ")
 		s.WriteString(m.spinner.View())
@@ -227,11 +227,11 @@ func (m model) runningView() string {
 func (m model) doneView() string {
 	var s strings.Builder
 	if m.currentStepFailed() {
-		s.WriteString(errorStyle.Render("Provisioning stopped"))
+		s.WriteString(errorStyle.Render("Setup stopped"))
 		s.WriteString("\n")
 		s.WriteString(subtitleStyle.Render("Fix the issue, then retry the failed step or go back to the plan."))
 	} else {
-		s.WriteString(successStyle.Render("Provisioning complete"))
+		s.WriteString(successStyle.Render("Fresh setup complete"))
 		s.WriteString("\n")
 		s.WriteString(subtitleStyle.Render(fmt.Sprintf("%d step(s) completed successfully.", m.completedRunSteps())))
 	}

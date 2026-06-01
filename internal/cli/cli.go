@@ -40,7 +40,7 @@ func BuildApp(dryRun bool, runnerFactory RunnerFactory) *cli.Command {
 func BuildAppWithMode(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:    "setup",
-		Usage:   "Provisioning helper for fresh Ubuntu 26.04 LXC containers",
+		Usage:   "Get a fresh Ubuntu 26.04 LXC ready to use",
 		Version: version,
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
@@ -123,9 +123,8 @@ func isRoot() bool {
 
 func bootstrapCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:    "bootstrap",
-		Aliases: []string{"b"},
-		Usage:   "Locale, system update, base packages, SSH hardening, unattended upgrades, Docker",
+		Name:  "base",
+		Usage: "Prepare locale, packages, SSH hardening, unattended upgrades, and Docker",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "timezone",
@@ -142,9 +141,8 @@ func bootstrapCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func addUserCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:    "add-user",
-		Aliases: []string{"a"},
-		Usage:   "Create sudo user with SSH key auth",
+		Name:  "user",
+		Usage: "Create a sudo user with SSH key auth",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "user",
@@ -185,9 +183,8 @@ func addUserCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func installToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:    "install-tools",
-		Aliases: []string{"i"},
-		Usage:   "Install ripgrep, fd, bat, yq, glow, gh",
+		Name:  "tools",
+		Usage: "Install ripgrep, fd, bat, yq, glow, and gh",
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 			return tools.InstallAll(commandRunner(cmd, dryRun, demo, runnerFactory))
 		}),
@@ -196,9 +193,8 @@ func installToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Comman
 
 func devToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:    "devtools",
-		Aliases: []string{"d"},
-		Usage:   "Install Go, Node.js, Rust, and ecosystem tools",
+		Name:  "dev",
+		Usage: "Install Go, Node.js, Rust, and ecosystem tools",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "user",
@@ -262,8 +258,8 @@ func devToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func doctorCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:  "doctor",
-		Usage: "Run read-only instance diagnostics",
+		Name:  "check",
+		Usage: "Run read-only instance checks",
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 			report := diagnostics.Run(commandRunner(cmd, dryRun, demo, runnerFactory))
 			fmt.Println(diagnostics.Format(report))
@@ -274,8 +270,8 @@ func doctorCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:  "firewall",
-		Usage: "Manage UFW firewall rules",
+		Name:  "network",
+		Usage: "Manage UFW network rules",
 		Commands: []*cli.Command{
 			{
 				Name:  "status",
@@ -290,7 +286,7 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				}),
 			},
 			{
-				Name:  "numbered",
+				Name:  "list",
 				Usage: "Show numbered UFW rules",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 					out, err := firewall.StatusNumbered(commandRunner(cmd, dryRun, demo, runnerFactory))
@@ -333,7 +329,7 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Name:  "delete",
 				Usage: "Delete a numbered UFW rule",
 				Flags: []cli.Flag{
-					&cli.IntFlag{Name: "number", Usage: "Rule number from firewall numbered", Required: true},
+					&cli.IntFlag{Name: "number", Usage: "Rule number from network list", Required: true},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 					return firewall.DeleteRule(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Int("number"))
@@ -352,7 +348,7 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func fail2banCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:  "fail2ban",
+		Name:  "guard",
 		Usage: "Manage fail2ban SSH protection",
 		Commands: []*cli.Command{
 			{
@@ -399,11 +395,11 @@ func fail2banCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func dockerCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:  "docker",
+		Name:  "containers",
 		Usage: "Manage Docker maintenance tasks",
 		Commands: []*cli.Command{
 			{
-				Name:  "logs-config",
+				Name:  "log-rotation",
 				Usage: "Configure Docker json-file log rotation",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "max-size", Value: "10m", Usage: "Maximum log file size"},
@@ -473,7 +469,7 @@ func updatesCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				}),
 			},
 			{
-				Name:  "reboot-required",
+				Name:  "reboot-needed",
 				Usage: "Show whether a reboot is required",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 					out, err := updates.RebootRequired(commandRunner(cmd, dryRun, demo, runnerFactory))
@@ -485,7 +481,7 @@ func updatesCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				}),
 			},
 			{
-				Name:  "unattended-status",
+				Name:  "unattended",
 				Usage: "Show unattended-upgrades service status",
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 					out, err := updates.UnattendedStatus(commandRunner(cmd, dryRun, demo, runnerFactory))
@@ -596,9 +592,8 @@ func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
-		Name:    "full",
-		Aliases: []string{"f"},
-		Usage:   "Run all steps in sequence",
+		Name:  "fresh",
+		Usage: "Run the full fresh-instance setup",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "user",
@@ -662,9 +657,8 @@ func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 
 func versionCmd() *cli.Command {
 	return &cli.Command{
-		Name:    "version",
-		Aliases: []string{"v"},
-		Usage:   "Print version info",
+		Name:  "version",
+		Usage: "Print version info",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			fmt.Println(cmd.Root().Version)
 			return nil

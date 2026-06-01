@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-01
+
+### Added
+- Top-level `install.sh` for a shorter latest-release install-and-launch one-liner.
+- Focused usage, development, and visual workflow docs under `docs/`.
+
+### Changed
+- Top-level CLI commands now use a warmer public vocabulary: `base`, `user`, `tools`, `dev`, `check`, `network`, `guard`, `containers`, and `fresh`.
+- Awkward nested command names were renamed to `network list`, `containers log-rotation`, `updates reboot-needed`, and `updates unattended`.
+- Public make targets now use `prep`, `taste`, `plate`, and `bake`, with `make bake` running checks, visual generation, and a local GoReleaser snapshot.
+- README is now a shorter landing page with detailed usage and development material moved into docs.
+
+### Removed
+- Old CLI command names and old public make target names are no longer kept as aliases.
+
 ## [0.7.0] - 2026-06-01
 
 ### Added
@@ -172,6 +187,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.8.0]: https://github.com/sqamsqam/setup/releases/tag/v0.8.0
 [0.7.0]: https://github.com/sqamsqam/setup/releases/tag/v0.7.0
 [0.6.0]: https://github.com/sqamsqam/setup/releases/tag/v0.6.0
 [0.5.4]: https://github.com/sqamsqam/setup/releases/tag/v0.5.4

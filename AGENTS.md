@@ -203,7 +203,7 @@ CI workflow (`.github/workflows/ci.yml`):
 - Runs `go test ./internal/...`
 - Runs `go vet ./internal/... ./cmd/...`
 - Runs golangci-lint
-- Runs `make review-ui` in a separate visual job and uploads `docs/assets` as a CI artifact
+- Runs `make plate` in a separate visual job and uploads `docs/assets` as a CI artifact
 
 ## GitHub Actions / Releases
 
@@ -232,18 +232,18 @@ Every pull request with user-visible changes should add a corresponding entry un
 Available targets:
 
 ```
-make build            # Build bin/setup-linux-amd64 (with ldflags: version, commit, date)
+make prep             # Build bin/setup-linux-amd64 (with ldflags: version, commit, date)
 make test             # go test ./internal/...
 make vet              # go vet ./internal/... ./cmd/...
 make lint             # golangci-lint run ./...
-make check            # Runs vet → test → lint in sequence
+make taste            # Runs vet → test → lint in sequence
 make install-visual-tools # Install pinned VHS plus ffmpeg/ttyd/browser runtime dependencies
-make screenshots      # Generate PNG screenshots from demo/screenshots/*.tape
-make demo-gif         # Generate supporting GIFs from demo/*.tape
-make golden-demo      # Generate docs/assets/golden-demo.gif
-make bake             # Alias for the happy-path golden demo animation
+make visual-screenshots # Generate PNG screenshots from demo/screenshots/*.tape
+make visual-gifs      # Generate supporting GIFs from demo/*.tape
+make visual-golden    # Generate docs/assets/golden-demo.gif
+make bake             # Runs taste, plate, then local GoReleaser snapshot
 make visual-test      # Validate VHS tapes and generated visual assets
-make review-ui        # Install/check visual tools, regenerate screenshots/GIFs/golden demo, validate outputs
+make plate            # Install/check visual tools, regenerate screenshots/GIFs/golden demo, validate outputs
 make clean            # Remove bin/
 make run-cli ARGS="..."  # go run ./cmd/setup with given args
 ```
@@ -256,7 +256,7 @@ When changing any visual aspect of the TUI or CLI presentation:
 
 1. Update or add VHS tapes under `demo/` if the workflow, layout, states, or expected output changed.
 2. Use `--demo` for every visual tape; do not require credentials, network services, or live host state.
-3. Run `make review-ui`.
+3. Run `make plate`.
 4. Review `docs/assets/golden-demo.gif`, `docs/assets/gifs/*.gif`, and `docs/assets/screenshots/*.png`.
 5. Include generated artifact paths in the final report.
 6. Mention visual regressions, notable visual changes, and any limitations.
@@ -267,7 +267,7 @@ Do not consider visual work complete until screenshots, GIFs, and the golden dem
 
 Keep the README accurate. When changing behaviour, update the README in the same change.
 
-The README should cover: purpose, target environment, installation, interactive/TUI mode, CLI command reference, dry-run usage, fresh LXC bootstrap flow, release process, development workflow, safety notes.
+The README should stay short and link to focused docs for usage, development, visuals, release process, and safety notes.
 
 ## Style
 

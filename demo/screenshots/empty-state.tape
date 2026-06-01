@@ -11,7 +11,7 @@ Set TypingSpeed 20ms
 
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Ubuntu Dev Instance Setup/
+Wait+Screen /Fresh Ubuntu Instance Setup/
 Space
 Down
 Space
