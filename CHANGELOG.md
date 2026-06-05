@@ -5,11 +5,14 @@
 ### Added
 - Modular user-management commands for selective login-user creation, SSH keys, SSH access, passwordless sudo, linger, existing group membership, disable, delete, and setup-owned service users.
 - TUI user-management selections for the default login-user workflow and setup-owned service-user creation.
+- Managed service lifecycle commands and TUI actions for create, status, logs, restart, list, disable, and remove.
+- TUI coverage for CLI-only instance administration helpers including UFW status/list/delete/reset, fail2ban status/unban, Docker disk/prune, update status actions, reboot, and configurable firewall/fail2ban/Docker options.
 
 ### Changed
 - Setup-managed SSH `AllowUsers` now tracks an explicit requested-user list instead of regenerating from every UID >= 1000 account.
 - Passwordless sudo disable now removes only setup-marked sudoers files and refuses unmanaged sudoers files.
 - Firewall rule deletion, firewall reset, and Docker prune now require `--yes`.
+- Managed service disable and remove now require confirmation and only operate on setup-marked unit files.
 
 ### Security
 - Setup-owned admin files now refuse to replace unmanaged existing files for SSH hardening, unattended upgrades, fail2ban, and managed user-service units.

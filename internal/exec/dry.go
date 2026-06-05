@@ -140,6 +140,11 @@ func (d *DryRunner) ReadFile(path string) ([]byte, error) {
 	return nil, nil
 }
 
+func (d *DryRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	d.log("ReadDir(" + path + ")")
+	return nil, os.ErrNotExist
+}
+
 func (d *DryRunner) CreateTemp(dir, pattern string) (string, error) {
 	if d.Demo {
 		path := strings.TrimRight(dir, "/") + "/" + strings.ReplaceAll(pattern, "*", "000000")

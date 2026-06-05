@@ -19,7 +19,7 @@ Wait+Screen /Fresh Ubuntu Instance Setup/
 Space
 Down
 Space
-Down 18
+Down 41
 Space
 Down 7
 Space

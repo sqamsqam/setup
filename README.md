@@ -45,6 +45,9 @@ sudo setup guard install
 sudo setup containers log-rotation
 sudo setup updates check
 sudo setup service create --user dev --name app --workdir /home/dev/app --cmd "npm start"
+sudo setup service list --user dev
+sudo setup service disable --user dev --name app --yes
+sudo setup service remove --user dev --name app --yes
 ```
 
 Use `--dry-run` to preview changes and `--demo` for clean non-mutating demos.

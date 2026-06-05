@@ -12,6 +12,7 @@ import (
 
 type serviceTestRunner struct {
 	*setupexec.DryRunner
+	dirs  map[string][]os.DirEntry
 	files map[string][]byte
 	ops   []string
 }
@@ -19,6 +20,7 @@ type serviceTestRunner struct {
 func newServiceTestRunner() *serviceTestRunner {
 	return &serviceTestRunner{
 		DryRunner: setupexec.NewDryRunner(),
+		dirs:      make(map[string][]os.DirEntry),
 		files:     make(map[string][]byte),
 	}
 }
@@ -43,6 +45,15 @@ func (r *serviceTestRunner) ReadFile(path string) ([]byte, error) {
 		return nil, os.ErrNotExist
 	}
 	return append([]byte(nil), data...), nil
+}
+
+func (r *serviceTestRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	r.ops = append(r.ops, "read-dir:"+path)
+	entries, ok := r.dirs[path]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]os.DirEntry(nil), entries...), nil
 }
 
 func (r *serviceTestRunner) WriteFile(path string, data []byte, perm os.FileMode) error {
@@ -192,6 +203,120 @@ func TestRestartDryRunDoesNotRequireReadableUnitFile(t *testing.T) {
 	}
 }
 
+func TestListManagedUnits(t *testing.T) {
+	runner := newServiceTestRunner()
+	dir := "/home/dev/.config/systemd/user"
+	runner.dirs[dir] = []os.DirEntry{
+		testDirEntry{name: "setup-zed.service"},
+		testDirEntry{name: "setup-app.service"},
+		testDirEntry{name: "setup-unmanaged.service"},
+		testDirEntry{name: "other.service"},
+		testDirEntry{name: "setup-not-service.timer"},
+		testDirEntry{name: "setup-dir.service", dir: true},
+	}
+	runner.files[filepath.Join(dir, "setup-zed.service")] = []byte(managed.Marker + "[Service]\nExecStart=/bin/true\n")
+	runner.files[filepath.Join(dir, "setup-app.service")] = []byte(managed.Marker + "[Service]\nExecStart=/bin/true\n")
+	runner.files[filepath.Join(dir, "setup-unmanaged.service")] = []byte("[Service]\nExecStart=/bin/true\n")
+
+	units, err := List(runner, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(units, ",")
+	if got != "setup-app.service,setup-zed.service" {
+		t.Fatalf("units = %q", got)
+	}
+}
+
+func TestListMissingUnitDirReturnsEmpty(t *testing.T) {
+	runner := newServiceTestRunner()
+	units, err := List(runner, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(units) != 0 {
+		t.Fatalf("expected empty units, got %v", units)
+	}
+}
+
+func TestDisableRefusesUnmanagedUnit(t *testing.T) {
+	runner := newServiceTestRunner()
+	runner.files["/home/dev/.config/systemd/user/setup-app.service"] = []byte("[Service]\nExecStart=/bin/true\n")
+
+	err := Disable(runner, "dev", "app")
+	if err == nil {
+		t.Fatal("expected unmanaged unit error")
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "run-as-user:") {
+			t.Fatalf("unexpected service operation after unmanaged refusal: %v", runner.ops)
+		}
+	}
+}
+
+func TestDisableManagedUnit(t *testing.T) {
+	runner := newServiceTestRunner()
+	runner.files["/home/dev/.config/systemd/user/setup-app.service"] = []byte(UnitContent(Config{
+		User:    "dev",
+		Name:    "app",
+		WorkDir: "/home/dev/app",
+		Command: "npm start",
+	}))
+
+	if err := Disable(runner, "dev", "app"); err != nil {
+		t.Fatal(err)
+	}
+	if !hasPrefixOp(runner.ops, "run-as-user:dev:systemctl --user disable --now setup-app.service") {
+		t.Fatalf("expected disable operation: %v", runner.ops)
+	}
+}
+
+func TestRemoveRefusesUnmanagedUnit(t *testing.T) {
+	runner := newServiceTestRunner()
+	path := "/home/dev/.config/systemd/user/setup-app.service"
+	runner.files[path] = []byte("[Service]\nExecStart=/bin/true\n")
+
+	err := Remove(runner, "dev", "app")
+	if err == nil {
+		t.Fatal("expected unmanaged unit error")
+	}
+	if _, ok := runner.files[path]; !ok {
+		t.Fatal("unmanaged unit should not be removed")
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "run-as-user:") || strings.HasPrefix(op, "remove:") {
+			t.Fatalf("unexpected operation after unmanaged refusal: %v", runner.ops)
+		}
+	}
+}
+
+func TestRemoveManagedUnit(t *testing.T) {
+	runner := newServiceTestRunner()
+	path := "/home/dev/.config/systemd/user/setup-app.service"
+	runner.files[path] = []byte(UnitContent(Config{
+		User:    "dev",
+		Name:    "app",
+		WorkDir: "/home/dev/app",
+		Command: "npm start",
+	}))
+
+	if err := Remove(runner, "dev", "app"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := runner.files[path]; ok {
+		t.Fatal("expected unit to be removed")
+	}
+	for _, want := range []string{
+		"run-as-user:dev:systemctl --user disable --now setup-app.service",
+		"remove:/home/dev/.config/systemd/user/setup-app.service",
+		"run-as-user:dev:systemctl --user daemon-reload",
+	} {
+		if !hasPrefixOp(runner.ops, want) {
+			t.Fatalf("missing %q from %v", want, runner.ops)
+		}
+	}
+}
+
 func hasPrefixOp(ops []string, want string) bool {
 	for _, op := range ops {
 		if strings.HasPrefix(op, want) {
@@ -200,3 +325,13 @@ func hasPrefixOp(ops []string, want string) bool {
 	}
 	return false
 }
+
+type testDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (e testDirEntry) Name() string               { return e.name }
+func (e testDirEntry) IsDir() bool                { return e.dir }
+func (e testDirEntry) Type() os.FileMode          { return 0 }
+func (e testDirEntry) Info() (os.FileInfo, error) { return nil, nil }

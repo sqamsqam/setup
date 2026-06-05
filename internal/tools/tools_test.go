@@ -510,6 +510,11 @@ func (r *aptKeyTestRunner) ReadFile(path string) ([]byte, error) {
 	return append([]byte(nil), data...), nil
 }
 
+func (r *aptKeyTestRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	r.ops = append(r.ops, "read-dir:"+path)
+	return nil, os.ErrNotExist
+}
+
 func (r *aptKeyTestRunner) CreateTemp(dir, pattern string) (string, error) {
 	r.tempN++
 	path := filepath.Join(dir, strings.Replace(pattern, "*", fmt.Sprintf("%d", r.tempN), 1))

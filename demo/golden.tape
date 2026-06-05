@@ -20,7 +20,7 @@ Type "./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
 Sleep 900ms
-Down 19
+Down 42
 Sleep 300ms
 Space
 Sleep 300ms

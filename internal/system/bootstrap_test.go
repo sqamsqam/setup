@@ -134,6 +134,11 @@ func (r *dockerAptTestRunner) ReadFile(path string) ([]byte, error) {
 	return append([]byte(nil), data...), nil
 }
 
+func (r *dockerAptTestRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	r.ops = append(r.ops, "read-dir:"+path)
+	return nil, os.ErrNotExist
+}
+
 func (r *dockerAptTestRunner) CreateTemp(dir, pattern string) (string, error) {
 	r.tempN++
 	path := filepath.Join(dir, strings.Replace(pattern, "*", strconv.Itoa(r.tempN), 1))

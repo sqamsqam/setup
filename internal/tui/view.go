@@ -103,6 +103,135 @@ func (m model) inputUserView() string {
 	return m.page("Target User", "Used for account creation and per-user Node.js tooling.", body, []key.Binding{keys.Continue, keys.Back})
 }
 
+func (m model) inputServiceUserGroupsView() string {
+	body := fieldLabelStyle.Render("SERVICE USER GROUPS")
+	body += "\n\n"
+	body += m.serviceGroupsInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("Optional. Use comma or space separated existing group names.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Service User Groups", "Add the no-login service account to existing supplementary groups.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputServiceNameView() string {
+	body := fieldLabelStyle.Render("SERVICE NAME")
+	body += "\n\n"
+	body += m.serviceNameInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("Names are stored as setup-<name>.service. Existing setup- prefixes are accepted.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Managed Service", "Choose the setup-managed user service to operate on.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputServiceWorkDirView() string {
+	body := fieldLabelStyle.Render("WORKING DIRECTORY")
+	body += "\n\n"
+	body += m.serviceWorkDir.View()
+	body += "\n\n"
+	body += dimStyle.Render("Use an absolute path owned by or accessible to the target user.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Service Workdir", "Set the directory systemd should run the service from.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputServiceCommandView() string {
+	body := fieldLabelStyle.Render("COMMAND")
+	body += "\n\n"
+	body += m.serviceCommand.View()
+	body += "\n\n"
+	body += dimStyle.Render("A single non-empty shell command run through /bin/bash -lc.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Service Command", "Set the command for the managed systemd service.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputServiceEnvFileView() string {
+	body := fieldLabelStyle.Render("ENVIRONMENT FILE")
+	body += "\n\n"
+	body += m.serviceEnvFile.View()
+	body += "\n\n"
+	body += dimStyle.Render("Optional. Leave blank to skip EnvironmentFile.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Service Environment", "Optionally reference an absolute environment file path.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputFirewallRuleView() string {
+	body := inputLine("PORT", m.firewallPortInput.View())
+	body += "\n\n" + inputLine("PROTO", m.firewallProtoInput.View())
+	body += "\n\n" + inputLine("FROM", m.firewallFromInput.View())
+	body += "\n\n" + inputLine("COMMENT", m.firewallComment.View())
+	body += "\n\n" + dimStyle.Render("Tab moves between fields. FROM and COMMENT are optional.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Custom Firewall Rule", "Configure one UFW allow rule.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputNetworkRuleNumberView() string {
+	body := fieldLabelStyle.Render("RULE NUMBER")
+	body += "\n\n"
+	body += m.networkRuleInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("Use the number shown by the numbered network rules action.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Delete Network Rule", "Choose the numbered UFW rule to delete.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputFail2BanOptionsView() string {
+	body := inputLine("BANTIME", m.fail2banBanTime.View())
+	body += "\n\n" + inputLine("FINDTIME", m.fail2banFindTime.View())
+	body += "\n\n" + inputLine("MAX RETRY", m.fail2banMaxRetry.View())
+	body += "\n\n" + dimStyle.Render("Tab moves between fields. Defaults match CLI mode.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("fail2ban Options", "Configure the setup-managed SSH jail.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputDockerLogOptionsView() string {
+	body := inputLine("MAX SIZE", m.dockerMaxSize.View())
+	body += "\n\n" + inputLine("MAX FILE", m.dockerMaxFile.View())
+	body += "\n\n" + dimStyle.Render("Tab moves between fields. Defaults match CLI mode.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Docker Log Rotation", "Configure json-file log rotation values.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputDockerPruneTargetsView() string {
+	body := fieldLabelStyle.Render("PRUNE TARGETS")
+	body += "\n\n"
+	body += m.pruneTargetsInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("Use containers, images, and/or build-cache, separated by spaces or commas.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Docker Prune", "Choose which Docker resources to prune.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputGuardIPView() string {
+	body := fieldLabelStyle.Render("IP ADDRESS")
+	body += "\n\n"
+	body += m.guardIPInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("The IP will be unbanned from the fail2ban sshd jail.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("fail2ban Unban", "Choose the IP address to unban.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
 func (m model) inputKeyView() string {
 	body := fieldLabelStyle.Render("SSH PUBLIC KEY")
 	body += "\n\n"
@@ -147,6 +276,33 @@ func (m model) confirmBody() string {
 	if m.selections.NeedsUsername() {
 		fmt.Fprintf(&body, "  Username: %s\n", strings.TrimSpace(m.usernameInput.Value()))
 	}
+	if m.selections.UserServiceGroups && strings.TrimSpace(m.serviceGroupsInput.Value()) != "" {
+		fmt.Fprintf(&body, "  Service user groups: %s\n", strings.TrimSpace(m.serviceGroupsInput.Value()))
+	}
+	if m.selections.NeedsServiceName() {
+		fmt.Fprintf(&body, "  Service: %s\n", strings.TrimSpace(m.serviceNameInput.Value()))
+	}
+	if m.selections.NeedsServiceWorkDir() {
+		fmt.Fprintf(&body, "  Service workdir: %s\n", strings.TrimSpace(m.serviceWorkDir.Value()))
+	}
+	if m.selections.NeedsServiceCommand() {
+		fmt.Fprintf(&body, "  Service command: %s\n", strings.TrimSpace(m.serviceCommand.Value()))
+	}
+	if m.selections.NeedsServiceEnvFile() && strings.TrimSpace(m.serviceEnvFile.Value()) != "" {
+		fmt.Fprintf(&body, "  Service env file: %s\n", strings.TrimSpace(m.serviceEnvFile.Value()))
+	}
+	if m.selections.NeedsFirewallRule() {
+		fmt.Fprintf(&body, "  Firewall rule: %s/%s\n", strings.TrimSpace(m.firewallPortInput.Value()), strings.TrimSpace(m.firewallProtoInput.Value()))
+	}
+	if m.selections.NeedsNetworkRuleNumber() {
+		fmt.Fprintf(&body, "  Network rule number: %s\n", strings.TrimSpace(m.networkRuleInput.Value()))
+	}
+	if m.selections.NeedsGuardIP() {
+		fmt.Fprintf(&body, "  Unban IP: %s\n", strings.TrimSpace(m.guardIPInput.Value()))
+	}
+	if m.selections.NeedsDockerPruneTargets() {
+		fmt.Fprintf(&body, "  Docker prune targets: %s\n", strings.TrimSpace(m.pruneTargetsInput.Value()))
+	}
 	if m.selections.NeedsSSHKey() {
 		pubkey := normalizeSSHKeyInput(m.sshKeyInput.Value())
 		fmt.Fprintf(&body, "  SSH key: %s\n", user.SSHKeySummary(pubkey))
@@ -179,6 +335,37 @@ func (m model) confirmBody() string {
 	}
 	if m.selections.UserCreateService {
 		body.WriteString("  A setup-owned no-login service user will be created under /var/lib/<user>.\n")
+		if m.selections.UserServiceGroups {
+			body.WriteString("  The service user will be added to the selected existing groups.\n")
+		}
+	}
+	if m.selections.ServiceAny() {
+		body.WriteString("\n")
+		body.WriteString(sectionStyle.Render("Managed services"))
+		body.WriteString("\n")
+		body.WriteString(divider(48))
+		body.WriteString("\n")
+	}
+	if m.selections.ServiceCreate {
+		body.WriteString("  A setup-managed per-user systemd service will be created and started.\n")
+	}
+	if m.selections.ServiceStatus {
+		body.WriteString("  Status will be read only after verifying the unit is setup-managed.\n")
+	}
+	if m.selections.ServiceLogs {
+		body.WriteString("  Recent logs will be read only after verifying the unit is setup-managed.\n")
+	}
+	if m.selections.ServiceRestart {
+		body.WriteString("  The setup-managed service will be restarted.\n")
+	}
+	if m.selections.ServiceList {
+		body.WriteString("  Setup-managed service units will be listed for the target user.\n")
+	}
+	if m.selections.ServiceDisable {
+		body.WriteString("  The setup-managed service will be stopped and disabled.\n")
+	}
+	if m.selections.ServiceRemove {
+		body.WriteString("  The setup-managed service unit file will be removed after stopping and disabling it.\n")
 	}
 	if m.selections.FirewallBaseline {
 		body.WriteString("  UFW will allow the detected SSH port before enabling default-deny incoming rules.\n")
@@ -186,11 +373,53 @@ func (m model) confirmBody() string {
 	if m.selections.FirewallHTTP || m.selections.FirewallHTTPS || m.selections.FirewallMosh {
 		body.WriteString("  Selected common firewall ports will be opened through UFW.\n")
 	}
+	if m.selections.FirewallCustom {
+		body.WriteString("  The custom firewall rule will be opened through UFW.\n")
+	}
+	if m.selections.NetworkStatus {
+		body.WriteString("  Verbose UFW status will be displayed.\n")
+	}
+	if m.selections.NetworkList {
+		body.WriteString("  Numbered UFW rules will be displayed.\n")
+	}
+	if m.selections.NetworkDelete {
+		body.WriteString("  The selected numbered UFW rule will be deleted.\n")
+	}
+	if m.selections.NetworkReset {
+		body.WriteString("  UFW rules will be reset.\n")
+	}
 	if m.selections.Fail2Ban {
 		body.WriteString("  fail2ban will manage a setup-owned SSH jail.\n")
 	}
+	if m.selections.Fail2BanStatus {
+		body.WriteString("  fail2ban SSH jail status will be displayed.\n")
+	}
+	if m.selections.Fail2BanUnban {
+		body.WriteString("  The selected IP will be unbanned from fail2ban.\n")
+	}
 	if m.selections.DockerLogRotation {
 		body.WriteString("  Docker daemon log rotation will be merged into daemon.json and Docker restarted only if changed.\n")
+	}
+	if m.selections.ContainersDisk {
+		body.WriteString("  Docker disk usage will be displayed.\n")
+	}
+	if m.selections.ContainersPrune {
+		body.WriteString("  Selected Docker resources will be pruned.\n")
+	}
+	if m.selections.UpdatesUpgrade {
+		body.WriteString("  Apt metadata will be refreshed and packages upgraded.\n")
+	}
+	if m.selections.UpdatesRebootNeed {
+		body.WriteString("  Reboot-required state will be displayed.\n")
+	}
+	if m.selections.UpdatesUnattended {
+		body.WriteString("  unattended-upgrades service status will be displayed.\n")
+	}
+	if m.selections.UpdatesFailed {
+		body.WriteString("  Failed systemd units will be displayed.\n")
+	}
+	if m.selections.UpdatesReboot {
+		body.WriteString("  The instance will reboot.\n")
 	}
 	if m.dryRun && !m.demo {
 		body.WriteString("\n")
@@ -430,6 +659,30 @@ func (m model) planSummaryLines() []string {
 	}
 	if m.selections.UserCreateService {
 		lines = append(lines, "User Management: create service user")
+		if m.selections.UserServiceGroups {
+			lines = append(lines, "User Management: service user groups")
+		}
+	}
+	if m.selections.ServiceCreate {
+		lines = append(lines, "Managed Service: create")
+	}
+	if m.selections.ServiceStatus {
+		lines = append(lines, "Managed Service: status")
+	}
+	if m.selections.ServiceLogs {
+		lines = append(lines, "Managed Service: logs")
+	}
+	if m.selections.ServiceRestart {
+		lines = append(lines, "Managed Service: restart")
+	}
+	if m.selections.ServiceList {
+		lines = append(lines, "Managed Service: list")
+	}
+	if m.selections.ServiceDisable {
+		lines = append(lines, "Managed Service: disable")
+	}
+	if m.selections.ServiceRemove {
+		lines = append(lines, "Managed Service: remove")
 	}
 	if m.selections.FirewallBaseline {
 		lines = append(lines, "Instance Management: UFW firewall baseline")
@@ -443,17 +696,59 @@ func (m model) planSummaryLines() []string {
 	if m.selections.FirewallMosh {
 		lines = append(lines, "Firewall Rule: allow Mosh")
 	}
+	if m.selections.FirewallCustom {
+		lines = append(lines, "Firewall Rule: custom")
+	}
+	if m.selections.NetworkStatus {
+		lines = append(lines, "Network: status")
+	}
+	if m.selections.NetworkList {
+		lines = append(lines, "Network: numbered rules")
+	}
+	if m.selections.NetworkDelete {
+		lines = append(lines, "Network: delete rule")
+	}
+	if m.selections.NetworkReset {
+		lines = append(lines, "Network: reset firewall")
+	}
 	if m.selections.Fail2Ban {
 		lines = append(lines, "Instance Management: fail2ban SSH jail")
 	}
+	if m.selections.Fail2BanStatus {
+		lines = append(lines, "Instance Management: fail2ban status")
+	}
+	if m.selections.Fail2BanUnban {
+		lines = append(lines, "Instance Management: fail2ban unban")
+	}
 	if m.selections.DockerLogRotation {
 		lines = append(lines, "Instance Management: Docker log rotation")
+	}
+	if m.selections.ContainersDisk {
+		lines = append(lines, "Instance Management: Docker disk usage")
+	}
+	if m.selections.ContainersPrune {
+		lines = append(lines, "Instance Management: Docker prune")
 	}
 	if m.selections.Diagnostics {
 		lines = append(lines, "Instance Management: Doctor diagnostics")
 	}
 	if m.selections.UpdatesCheck {
 		lines = append(lines, "Instance Management: Update check")
+	}
+	if m.selections.UpdatesUpgrade {
+		lines = append(lines, "Instance Management: full upgrade")
+	}
+	if m.selections.UpdatesRebootNeed {
+		lines = append(lines, "Instance Management: reboot needed")
+	}
+	if m.selections.UpdatesUnattended {
+		lines = append(lines, "Instance Management: unattended status")
+	}
+	if m.selections.UpdatesFailed {
+		lines = append(lines, "Instance Management: failed units")
+	}
+	if m.selections.UpdatesReboot {
+		lines = append(lines, "Instance Management: reboot")
 	}
 	for _, tool := range m.selections.Tools.SelectedTools() {
 		lines = append(lines, "CLI Tool: "+string(tool))
@@ -491,6 +786,10 @@ func truncateKey(key string, max int) string {
 		return key[:max]
 	}
 	return key[:max-3] + "..."
+}
+
+func inputLine(label, value string) string {
+	return fieldLabelStyle.Render(label) + "\n" + value
 }
 
 func truncateOutput(output string, max int) string {

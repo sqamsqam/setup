@@ -5,10 +5,12 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	"github.com/sqamsqam/setup/internal/managed"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -386,6 +388,125 @@ func TestRunDockerPruneWithYes(t *testing.T) {
 	}
 }
 
+func TestRunServiceDisableRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "service", "disable", "--user", "dev", "--name", "app"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "systemctl --user disable") {
+		t.Fatalf("unexpected disable command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunServiceRemoveRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "service", "remove", "--user", "dev", "--name", "app"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "systemctl --user disable") || strings.Contains(dryBuf.String(), "Remove(") {
+		t.Fatalf("unexpected remove command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunServiceCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "create",
+			args: []string{"setup", "service", "create", "--user", "dev", "--name", "app", "--workdir", "/home/dev/app", "--cmd", "npm start"},
+			want: "systemctl --user enable --now setup-app.service",
+		},
+		{
+			name: "status",
+			args: []string{"setup", "service", "status", "--user", "dev", "--name", "app"},
+			want: "sudo -iu dev -- systemctl --user status setup-app.service --no-pager",
+		},
+		{
+			name: "logs",
+			args: []string{"setup", "service", "logs", "--user", "dev", "--name", "app"},
+			want: "sudo -iu dev -- journalctl --user -u setup-app.service --no-pager -n 100",
+		},
+		{
+			name: "restart",
+			args: []string{"setup", "service", "restart", "--user", "dev", "--name", "app"},
+			want: "systemctl --user restart setup-app.service",
+		},
+		{
+			name: "disable",
+			args: []string{"setup", "service", "disable", "--user", "dev", "--name", "app", "--yes"},
+			want: "systemctl --user disable --now setup-app.service",
+		},
+		{
+			name: "remove",
+			args: []string{"setup", "service", "remove", "--user", "dev", "--name", "app", "--yes"},
+			want: "Remove(/home/dev/.config/systemd/user/setup-app.service)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var dryBuf bytes.Buffer
+			dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+			setupexec.SetPrintWriter(io.Discard)
+
+			app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+			if err := app.Run(context.Background(), tt.args); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(dryBuf.String(), tt.want) {
+				t.Fatalf("expected %q in output:\n%s", tt.want, dryBuf.String())
+			}
+		})
+	}
+}
+
+func TestRunServiceListPrintsManagedUnits(t *testing.T) {
+	runner := newCLIServiceListRunner()
+	dir := "/home/dev/.config/systemd/user"
+	runner.dirs[dir] = []os.DirEntry{
+		cliDirEntry{name: "setup-zed.service"},
+		cliDirEntry{name: "setup-app.service"},
+		cliDirEntry{name: "other.service"},
+	}
+	runner.files[filepath.Join(dir, "setup-zed.service")] = []byte(managed.Marker + "[Service]\n")
+	runner.files[filepath.Join(dir, "setup-app.service")] = []byte(managed.Marker + "[Service]\n")
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return runner })
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	err := app.Run(context.Background(), []string{"setup", "service", "list", "--user", "dev"})
+	_ = w.Close()
+	os.Stdout = old
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "setup-app.service\nsetup-zed.service" {
+		t.Fatalf("unexpected list output %q", got)
+	}
+}
+
 func TestRunDevToolsPnpmInstallsNodeFirst(t *testing.T) {
 	var dryBuf bytes.Buffer
 	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
@@ -616,3 +737,50 @@ func TestDevToolsMissingUser(t *testing.T) {
 		t.Fatal("error expected for missing --user")
 	}
 }
+
+type cliServiceListRunner struct {
+	*setupexec.DryRunner
+	dirs  map[string][]os.DirEntry
+	files map[string][]byte
+}
+
+func newCLIServiceListRunner() *cliServiceListRunner {
+	return &cliServiceListRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		dirs:      make(map[string][]os.DirEntry),
+		files:     make(map[string][]byte),
+	}
+}
+
+func (r *cliServiceListRunner) Output(name string, args ...string) (string, error) {
+	if name == "getent" && len(args) >= 2 && args[0] == "passwd" {
+		return args[1] + ":x:1000:1000:User:/home/" + args[1] + ":/bin/bash", nil
+	}
+	return r.DryRunner.Output(name, args...)
+}
+
+func (r *cliServiceListRunner) ReadFile(path string) ([]byte, error) {
+	data, ok := r.files[path]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func (r *cliServiceListRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	entries, ok := r.dirs[path]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]os.DirEntry(nil), entries...), nil
+}
+
+type cliDirEntry struct {
+	name string
+	dir  bool
+}
+
+func (e cliDirEntry) Name() string               { return e.name }
+func (e cliDirEntry) IsDir() bool                { return e.dir }
+func (e cliDirEntry) Type() os.FileMode          { return 0 }
+func (e cliDirEntry) Info() (os.FileInfo, error) { return nil, nil }

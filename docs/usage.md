@@ -12,7 +12,8 @@ The TUI lets you pick the work to run before anything changes:
 
 - Base system setup: locale, package updates, timezone, unattended upgrades, SSH hardening, and Docker.
 - User management: login-user creation, SSH keys, SSH access, passwordless sudo, linger, Docker group membership, and setup-owned service users.
-- Instance care: UFW rules, fail2ban, Docker log rotation, diagnostics, and update checks.
+- Managed services: create, inspect, restart, list, disable, and remove setup-owned per-user systemd services.
+- Instance care: UFW rules/status, fail2ban, Docker log rotation/disk/prune, diagnostics, updates, and reboot actions.
 - CLI tools: ripgrep, fd, bat, yq, glow, and gh.
 - Development tools: Go, Node.js, Rust, golangci-lint, GoReleaser, govulncheck, and pnpm.
 
@@ -92,9 +93,12 @@ sudo setup updates failed-units
 sudo setup updates reboot --yes
 
 sudo setup service create --user dev --name app --workdir /home/dev/app --cmd "npm start"
+sudo setup service list --user dev
 sudo setup service status --user dev --name app
 sudo setup service logs --user dev --name app
 sudo setup service restart --user dev --name app
+sudo setup service disable --user dev --name app --yes
+sudo setup service remove --user dev --name app --yes
 ```
 
 Use `setup --help` or `setup <command> --help` for generated help.
@@ -126,7 +130,7 @@ Visual demos must use `--demo` so they stay deterministic and safe.
 - `setup user ssh allow` and `setup user ssh deny` manage only the setup-owned `AllowUsers` list instead of scanning all UID >= 1000 users.
 - Passwordless sudo is managed only through setup-owned `/etc/sudoers.d/<user>` files. Disable refuses to remove unmanaged sudoers files.
 - Setup-owned admin files, including SSH hardening, unattended-upgrades, fail2ban, and managed user-service units, refuse to replace unmanaged existing files.
-- Destructive admin commands such as firewall rule deletion, firewall reset, and Docker prune require `--yes`.
+- Destructive or service-stopping admin commands such as firewall rule deletion, firewall reset, Docker prune, service disable, and service remove require `--yes`.
 - Group commands require the group to already exist; they do not create groups implicitly.
 - Service users are setup-owned no-login system accounts with homes under `/var/lib/<user>`. They are not modifications to distro-owned accounts such as `root`, `www-data`, `sshd`, or `nobody`.
 - `setup user disable` locks access and removes setup-managed SSH, linger, and sudo access without deleting data. `setup user delete --remove-home` is required for irreversible home removal.

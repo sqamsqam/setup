@@ -30,8 +30,11 @@ func TestInitialModel(t *testing.T) {
 	if m.selections.UserCreateService {
 		t.Fatal("service user should not be selected by default")
 	}
-	if len(m.planItems()) != 34 {
-		t.Errorf("expected 34 plan items, got: %d", len(m.planItems()))
+	if m.selections.ServiceAny() {
+		t.Fatal("managed services should not be selected by default")
+	}
+	if len(m.planItems()) != 57 {
+		t.Errorf("expected 57 plan items, got: %d", len(m.planItems()))
 	}
 }
 
@@ -78,6 +81,37 @@ func TestSelectionRequirements(t *testing.T) {
 	if !s.NeedsUsername() || s.NeedsSSHKey() {
 		t.Fatal("service user should require username but not SSH key")
 	}
+
+	s = selectionState{ServiceList: true}
+	if !s.NeedsUsername() || s.NeedsServiceName() || s.NeedsSSHKey() {
+		t.Fatal("service list should require username only")
+	}
+
+	s = selectionState{ServiceRestart: true}
+	if !s.NeedsUsername() || !s.NeedsServiceName() || s.NeedsServiceWorkDir() || s.NeedsSSHKey() {
+		t.Fatal("service restart should require username and service name only")
+	}
+
+	s = selectionState{ServiceCreate: true}
+	if !s.NeedsUsername() || !s.NeedsServiceName() || !s.NeedsServiceWorkDir() ||
+		!s.NeedsServiceCommand() || !s.NeedsServiceEnvFile() || s.NeedsSSHKey() {
+		t.Fatal("service create should require username, name, workdir, command, and optional env-file screen")
+	}
+
+	s = selectionState{FirewallCustom: true}
+	if !s.NeedsFirewallRule() {
+		t.Fatal("custom firewall rule should require firewall rule input")
+	}
+
+	s = selectionState{NetworkDelete: true}
+	if !s.NeedsNetworkRuleNumber() {
+		t.Fatal("network delete should require rule number input")
+	}
+
+	s = selectionState{Fail2Ban: true, DockerLogRotation: true, ContainersPrune: true, Fail2BanUnban: true}
+	if !s.NeedsFail2BanOptions() || !s.NeedsDockerLogOptions() || !s.NeedsDockerPruneTargets() || !s.NeedsGuardIP() {
+		t.Fatal("admin option selections should require matching inputs")
+	}
 }
 
 func TestToggleCLIAll(t *testing.T) {
@@ -104,6 +138,46 @@ func TestToggleIndividualTool(t *testing.T) {
 	}
 	if got := len(m.selections.Tools.SelectedTools()); got != 1 {
 		t.Fatalf("expected one selected tool, got %d", got)
+	}
+}
+
+func TestToggleManagedServices(t *testing.T) {
+	m := InitialModel(false)
+
+	m.togglePlanItem(itemServiceAll)
+	if !m.selections.ServiceAll() {
+		t.Fatalf("expected all managed services selected: %#v", m.selections)
+	}
+
+	m.togglePlanItem(itemServiceAll)
+	if m.selections.ServiceAny() {
+		t.Fatalf("expected managed services disabled: %#v", m.selections)
+	}
+}
+
+func TestToggleIndividualManagedService(t *testing.T) {
+	m := InitialModel(false)
+
+	m.togglePlanItem(itemServiceList)
+	if !m.selections.ServiceList {
+		t.Fatal("expected service list to be selected")
+	}
+	if !m.selections.ServiceAny() || m.selections.ServiceAll() {
+		t.Fatalf("expected partial managed service selection: %#v", m.selections)
+	}
+}
+
+func TestToggleInstanceManagementAll(t *testing.T) {
+	m := InitialModel(false)
+
+	m.togglePlanItem(itemManageAll)
+	if !m.selections.InstanceManagementAll() {
+		t.Fatalf("expected all instance-management actions selected: %#v", m.selections)
+	}
+
+	m.togglePlanItem(itemManageAll)
+	if m.selections.InstanceManagementAny() {
+		t.Fatalf("expected instance-management actions disabled: %#v", m.selections)
 	}
 }
 
@@ -196,6 +270,17 @@ func TestStartInputFlowWithOnlyCLIShowsConfirm(t *testing.T) {
 	}
 }
 
+func TestStartInputFlowWithServiceListStartsWithUser(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{ServiceList: true}
+
+	updated, _ := m.startInputFlow()
+	got := updated.(model)
+	if got.screen != screenInputUser {
+		t.Fatalf("expected username screen, got %d", got.screen)
+	}
+}
+
 func TestStartInputFlowRejectsEmptySelection(t *testing.T) {
 	m := InitialModel(false)
 	m.selections = selectionState{}
@@ -221,6 +306,56 @@ func TestInputFlow(t *testing.T) {
 	flow := m.inputFlow()
 	if len(flow) != 1 || flow[0] != screenInputUser {
 		t.Fatalf("expected only username flow, got %#v", flow)
+	}
+
+	m.selections = selectionState{ServiceCreate: true}
+	flow = m.inputFlow()
+	want := []screen{
+		screenInputUser,
+		screenInputServiceName,
+		screenInputServiceWorkDir,
+		screenInputServiceCommand,
+		screenInputServiceEnvFile,
+	}
+	if len(flow) != len(want) {
+		t.Fatalf("service create flow = %#v, want %#v", flow, want)
+	}
+	for i := range want {
+		if flow[i] != want[i] {
+			t.Fatalf("service create flow = %#v, want %#v", flow, want)
+		}
+	}
+
+	m.selections = selectionState{ServiceRemove: true}
+	flow = m.inputFlow()
+	if len(flow) != 2 || flow[0] != screenInputUser || flow[1] != screenInputServiceName {
+		t.Fatalf("expected username + service name flow, got %#v", flow)
+	}
+
+	m.selections = selectionState{
+		FirewallCustom:    true,
+		NetworkDelete:     true,
+		Fail2Ban:          true,
+		DockerLogRotation: true,
+		ContainersPrune:   true,
+		Fail2BanUnban:     true,
+	}
+	flow = m.inputFlow()
+	want = []screen{
+		screenInputFirewallRule,
+		screenInputNetworkRuleNumber,
+		screenInputFail2BanOptions,
+		screenInputDockerLogOptions,
+		screenInputDockerPruneTargets,
+		screenInputGuardIP,
+	}
+	if len(flow) != len(want) {
+		t.Fatalf("admin flow = %#v, want %#v", flow, want)
+	}
+	for i := range want {
+		if flow[i] != want[i] {
+			t.Fatalf("admin flow = %#v, want %#v", flow, want)
+		}
 	}
 }
 
@@ -250,6 +385,68 @@ func TestBuildRunStepsYqOnly(t *testing.T) {
 	}
 	if steps[0].id != runToolDeps || steps[1].tool != tools.ToolYq {
 		t.Fatalf("unexpected steps: %#v", steps)
+	}
+}
+
+func TestBuildRunStepsManagedServices(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{ServiceCreate: true, ServiceList: true, ServiceRemove: true}
+
+	steps := m.buildRunSteps()
+	if len(steps) != 3 {
+		t.Fatalf("expected 3 service steps, got %d", len(steps))
+	}
+	want := []runStepID{runServiceCreate, runServiceList, runServiceRemove}
+	for i := range want {
+		if steps[i].id != want[i] {
+			t.Fatalf("steps = %#v, want ids %#v", steps, want)
+		}
+	}
+}
+
+func TestBuildRunStepsInstanceManagementGaps(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{
+		FirewallCustom:    true,
+		NetworkStatus:     true,
+		NetworkList:       true,
+		NetworkDelete:     true,
+		NetworkReset:      true,
+		Fail2BanStatus:    true,
+		Fail2BanUnban:     true,
+		ContainersDisk:    true,
+		ContainersPrune:   true,
+		UpdatesUpgrade:    true,
+		UpdatesRebootNeed: true,
+		UpdatesUnattended: true,
+		UpdatesFailed:     true,
+		UpdatesReboot:     true,
+	}
+
+	steps := m.buildRunSteps()
+	want := []runStepID{
+		runFirewallCustom,
+		runNetworkStatus,
+		runNetworkList,
+		runNetworkDelete,
+		runNetworkReset,
+		runFail2BanStatus,
+		runFail2BanUnban,
+		runContainersDisk,
+		runContainersPrune,
+		runUpdatesUpgrade,
+		runUpdatesRebootN,
+		runUpdatesUnattend,
+		runUpdatesFailed,
+		runUpdatesReboot,
+	}
+	if len(steps) != len(want) {
+		t.Fatalf("expected %d steps, got %d: %#v", len(want), len(steps), steps)
+	}
+	for i := range want {
+		if steps[i].id != want[i] {
+			t.Fatalf("steps = %#v, want ids %#v", steps, want)
+		}
 	}
 }
 
@@ -318,6 +515,66 @@ func TestEmptyUsernameShowsError(t *testing.T) {
 	}
 }
 
+func TestInvalidServiceNameShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputServiceName
+	m.serviceNameInput.SetValue("bad/name")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected service name error")
+	}
+	if got.screen != screenInputServiceName {
+		t.Fatalf("expected to stay on service name screen, got %d", got.screen)
+	}
+}
+
+func TestInvalidServiceWorkDirShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputServiceWorkDir
+	m.serviceWorkDir.SetValue("relative/path")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected service workdir error")
+	}
+	if got.screen != screenInputServiceWorkDir {
+		t.Fatalf("expected to stay on service workdir screen, got %d", got.screen)
+	}
+}
+
+func TestEmptyServiceCommandShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputServiceCommand
+	m.serviceCommand.SetValue("")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected service command error")
+	}
+	if got.screen != screenInputServiceCommand {
+		t.Fatalf("expected to stay on service command screen, got %d", got.screen)
+	}
+}
+
+func TestInvalidServiceEnvFileShowsError(t *testing.T) {
+	m := InitialModel(false)
+	m.screen = screenInputServiceEnvFile
+	m.serviceEnvFile.SetValue("relative.env")
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(model)
+	if got.inputErr == "" {
+		t.Fatal("expected service env file error")
+	}
+	if got.screen != screenInputServiceEnvFile {
+		t.Fatalf("expected to stay on service env-file screen, got %d", got.screen)
+	}
+}
+
 func TestInvalidSSHKeyShowsError(t *testing.T) {
 	m := InitialModel(false)
 	m.screen = screenInputKey
@@ -330,6 +587,25 @@ func TestInvalidSSHKeyShowsError(t *testing.T) {
 	}
 	if got.screen != screenInputKey {
 		t.Fatalf("expected to stay on SSH key screen, got %d", got.screen)
+	}
+}
+
+func TestConfirmBodyIncludesManagedServiceWarnings(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{ServiceDisable: true, ServiceRemove: true}
+	m.usernameInput.SetValue("dev")
+	m.serviceNameInput.SetValue("app")
+
+	body := m.confirmBody()
+	for _, want := range []string{
+		"Managed Service: disable",
+		"Managed Service: remove",
+		"The setup-managed service will be stopped and disabled.",
+		"The setup-managed service unit file will be removed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in confirm body:\n%s", want, body)
+		}
 	}
 }
 
@@ -473,6 +749,46 @@ func TestViewsFitStandardTerminalHeight(t *testing.T) {
 				m.resize(80, 24)
 				m.screen = screenInputUser
 				m.inputErr = "invalid username"
+				return m
+			},
+		},
+		{
+			name: "service name input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputServiceName
+				m.inputErr = "invalid service name"
+				return m
+			},
+		},
+		{
+			name: "service workdir input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputServiceWorkDir
+				m.inputErr = "invalid workdir"
+				return m
+			},
+		},
+		{
+			name: "service command input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputServiceCommand
+				m.inputErr = "invalid command"
+				return m
+			},
+		},
+		{
+			name: "service env-file input",
+			model: func() model {
+				m := InitialModel(false)
+				m.resize(80, 24)
+				m.screen = screenInputServiceEnvFile
+				m.inputErr = "invalid env file"
 				return m
 			},
 		},

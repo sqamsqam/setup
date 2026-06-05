@@ -50,6 +50,7 @@ type CmdRunner interface {
 
 	WriteFile(path string, data []byte, perm os.FileMode) error
 	ReadFile(path string) ([]byte, error)
+	ReadDir(path string) ([]os.DirEntry, error)
 	CreateTemp(dir, pattern string) (string, error)
 	Rename(oldpath, newpath string) error
 	Chmod(path string, mode os.FileMode) error
@@ -170,6 +171,10 @@ func (r *RealRunner) WriteFile(path string, data []byte, perm os.FileMode) error
 
 func (r *RealRunner) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
+}
+
+func (r *RealRunner) ReadDir(path string) ([]os.DirEntry, error) {
+	return os.ReadDir(path)
 }
 
 func (r *RealRunner) CreateTemp(dir, pattern string) (string, error) {

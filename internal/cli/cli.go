@@ -781,6 +781,25 @@ func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				}),
 			},
 			{
+				Name:  "list",
+				Usage: "List setup-managed user services",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					units, err := service.List(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					if err != nil {
+						return err
+					}
+					if len(units) == 0 {
+						fmt.Println("No setup-managed services found.")
+						return nil
+					}
+					fmt.Println(strings.Join(units, "\n"))
+					return nil
+				}),
+			},
+			{
 				Name:  "logs",
 				Usage: "Show recent managed user service logs",
 				Flags: []cli.Flag{
@@ -805,6 +824,36 @@ func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 					return service.Restart(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
+				}),
+			},
+			{
+				Name:  "disable",
+				Usage: "Disable and stop a managed user service",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm disabling and stopping the service"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("service disable requires --yes")
+					}
+					return service.Disable(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
+				}),
+			},
+			{
+				Name:  "remove",
+				Usage: "Remove a managed user service unit",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.StringFlag{Name: "name", Usage: "Service name", Required: true},
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm disabling and removing the service unit"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("service remove requires --yes")
+					}
+					return service.Remove(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("name"))
 				}),
 			},
 		},

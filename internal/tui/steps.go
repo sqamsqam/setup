@@ -14,6 +14,7 @@ import (
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/firewall"
 	"github.com/sqamsqam/setup/internal/security"
+	"github.com/sqamsqam/setup/internal/service"
 	"github.com/sqamsqam/setup/internal/system"
 	"github.com/sqamsqam/setup/internal/tools"
 	"github.com/sqamsqam/setup/internal/updates"
@@ -147,7 +148,46 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 	case runUserDockerGroup:
 		return user.AddGroup(runner, username, "docker")
 	case runServiceUser:
-		return user.CreateServiceUser(runner, username, nil)
+		return user.CreateServiceUser(runner, username, parseServiceGroups(m.serviceGroupsInput.Value()))
+	case runServiceCreate:
+		return service.Create(runner, service.Config{
+			User:    username,
+			Name:    strings.TrimSpace(m.serviceNameInput.Value()),
+			WorkDir: strings.TrimSpace(m.serviceWorkDir.Value()),
+			Command: strings.TrimSpace(m.serviceCommand.Value()),
+			EnvFile: strings.TrimSpace(m.serviceEnvFile.Value()),
+		})
+	case runServiceStatus:
+		out, err := service.Status(runner, username, strings.TrimSpace(m.serviceNameInput.Value()))
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runServiceLogs:
+		out, err := service.Logs(runner, username, strings.TrimSpace(m.serviceNameInput.Value()))
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runServiceRestart:
+		return service.Restart(runner, username, strings.TrimSpace(m.serviceNameInput.Value()))
+	case runServiceList:
+		units, err := service.List(runner, username)
+		if err != nil {
+			return err
+		}
+		if len(units) == 0 {
+			setupexec.PrintOutput("No setup-managed services found.")
+			return nil
+		}
+		setupexec.PrintOutput(strings.Join(units, "\n"))
+		return nil
+	case runServiceDisable:
+		return service.Disable(runner, username, strings.TrimSpace(m.serviceNameInput.Value()))
+	case runServiceRemove:
+		return service.Remove(runner, username, strings.TrimSpace(m.serviceNameInput.Value()))
 	case runFirewall:
 		return firewall.EnableBaseline(runner, true)
 	case runHTTP:
@@ -156,10 +196,67 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 		return firewall.AllowRule(runner, firewall.Rule{Port: "443", Proto: "tcp", Comment: "setup https"})
 	case runMosh:
 		return firewall.AllowRule(runner, firewall.Rule{Port: "60000:61000", Proto: "udp", Comment: "setup mosh"})
+	case runFirewallCustom:
+		return firewall.AllowRule(runner, m.firewallRule())
+	case runNetworkStatus:
+		out, err := firewall.Status(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runNetworkList:
+		out, err := firewall.StatusNumbered(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runNetworkDelete:
+		number, err := networkRuleNumber(m.networkRuleInput.Value())
+		if err != nil {
+			return err
+		}
+		return firewall.DeleteRule(runner, number)
+	case runNetworkReset:
+		return firewall.Reset(runner)
 	case runFail2Ban:
-		return security.InstallFail2Ban(runner, security.DefaultFail2BanOptions())
+		maxRetry, err := fail2banMaxRetry(m.fail2banMaxRetry.Value())
+		if err != nil {
+			return err
+		}
+		return security.InstallFail2Ban(runner, security.Fail2BanOptions{
+			BanTime:  strings.TrimSpace(m.fail2banBanTime.Value()),
+			FindTime: strings.TrimSpace(m.fail2banFindTime.Value()),
+			MaxRetry: maxRetry,
+		})
+	case runFail2BanStatus:
+		out, err := security.Fail2BanStatus(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runFail2BanUnban:
+		return security.UnbanIP(runner, strings.TrimSpace(m.guardIPInput.Value()))
 	case runDockerLog:
-		return dockermaint.ConfigureLogRotation(runner, dockermaint.DefaultLogRotationOptions())
+		return dockermaint.ConfigureLogRotation(runner, dockermaint.LogRotationOptions{
+			MaxSize: strings.TrimSpace(m.dockerMaxSize.Value()),
+			MaxFile: strings.TrimSpace(m.dockerMaxFile.Value()),
+		})
+	case runContainersDisk:
+		out, err := dockermaint.DiskUsage(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runContainersPrune:
+		opts, err := parseDockerPruneTargets(m.pruneTargetsInput.Value())
+		if err != nil {
+			return err
+		}
+		return dockermaint.Prune(runner, opts)
 	case runDoctor:
 		setupexec.PrintOutput(diagnostics.Format(diagnostics.Run(runner)))
 		return nil
@@ -170,6 +267,31 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 		}
 		setupexec.PrintOutput(out)
 		return nil
+	case runUpdatesUpgrade:
+		return updates.Upgrade(runner)
+	case runUpdatesRebootN:
+		out, err := updates.RebootRequired(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runUpdatesUnattend:
+		out, err := updates.UnattendedStatus(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runUpdatesFailed:
+		out, err := updates.FailedUnits(runner)
+		if err != nil {
+			return err
+		}
+		setupexec.PrintOutput(out)
+		return nil
+	case runUpdatesReboot:
+		return updates.Reboot(runner, true)
 	case runToolDeps:
 		return tools.InstallDependencies(runner)
 	case runTool:
