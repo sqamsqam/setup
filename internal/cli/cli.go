@@ -537,15 +537,25 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Usage: "Delete a numbered UFW rule",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "number", Usage: "Rule number from network list", Required: true},
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm rule deletion"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("network delete requires --yes")
+					}
 					return firewall.DeleteRule(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Int("number"))
 				}),
 			},
 			{
 				Name:  "reset",
 				Usage: "Reset UFW rules",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm firewall reset"},
+				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("network reset requires --yes")
+					}
 					return firewall.Reset(commandRunner(cmd, dryRun, demo, runnerFactory))
 				}),
 			},
@@ -638,8 +648,12 @@ func dockerCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 					&cli.BoolFlag{Name: "containers", Usage: "Prune stopped containers"},
 					&cli.BoolFlag{Name: "images", Usage: "Prune dangling images"},
 					&cli.BoolFlag{Name: "build-cache", Usage: "Prune build cache"},
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm Docker prune"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("containers prune requires --yes")
+					}
 					return dockermaint.Prune(commandRunner(cmd, dryRun, demo, runnerFactory), dockermaint.PruneOptions{
 						Containers: cmd.Bool("containers"),
 						Images:     cmd.Bool("images"),

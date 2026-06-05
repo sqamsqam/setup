@@ -9,6 +9,7 @@ import (
 
 	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
+	"github.com/sqamsqam/setup/internal/managed"
 )
 
 const (
@@ -89,7 +90,8 @@ APT::Periodic::Unattended-Upgrade "1";
 		return err
 	}
 
-	return atomicWriteFile(runner, autoUpgradesConfig, []byte(content), 0644)
+	_, err = managed.WriteManagedFileIfChanged(runner, autoUpgradesConfig, []byte(content), 0644)
+	return err
 }
 
 func setTimezone(runner setupexec.CmdRunner, tz string) error {
@@ -115,12 +117,19 @@ MaxStartups 10:30:100
 		return err
 	}
 
-	oldContent, _ := runner.ReadFile(sshdHardeningConfig)
 	newContent := []byte(content)
+	oldContent, readErr := runner.ReadFile(sshdHardeningConfig)
 
 	// If content unchanged and current config is valid, skip
-	if string(oldContent) == string(newContent) && sshdConfigValid(runner) {
-		return nil
+	if readErr == nil {
+		if bytes.Equal(oldContent, newContent) && sshdConfigValid(runner) {
+			return nil
+		}
+		if !managed.IsMarked(oldContent) && (!setupexec.IsDryRun(runner) || len(oldContent) != 0) {
+			return fmt.Errorf("refusing to replace unmanaged SSH hardening file %s", sshdHardeningConfig)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return readErr
 	}
 
 	if err := installSSHDropIn(runner, sshdHardeningConfig, newContent); err != nil {
@@ -225,6 +234,13 @@ func atomicWriteFile(runner setupexec.CmdRunner, path string, data []byte, perm 
 func installSSHDropIn(runner setupexec.CmdRunner, path string, data []byte) error {
 	oldContent, readErr := runner.ReadFile(path)
 	hadOld := readErr == nil
+	if readErr == nil {
+		if !managed.IsMarked(oldContent) && (!setupexec.IsDryRun(runner) || len(oldContent) != 0) {
+			return fmt.Errorf("refusing to replace unmanaged SSH drop-in %s", path)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return readErr
+	}
 
 	if err := atomicWriteFile(runner, path, data, 0644); err != nil {
 		return err

@@ -34,6 +34,12 @@ func InstallFail2Ban(runner setupexec.CmdRunner, opts Fail2BanOptions) error {
 	if opts.MaxRetry < 1 {
 		return fmt.Errorf("max retry must be 1 or greater")
 	}
+	if err := validateSingleLineOption("bantime", opts.BanTime); err != nil {
+		return err
+	}
+	if err := validateSingleLineOption("findtime", opts.FindTime); err != nil {
+		return err
+	}
 
 	if err := runner.Run("apt", "update"); err != nil {
 		return err
@@ -42,15 +48,31 @@ func InstallFail2Ban(runner setupexec.CmdRunner, opts Fail2BanOptions) error {
 		return err
 	}
 
-	changed, err := managed.WriteFileIfChanged(runner, fail2banJailPath, []byte(Fail2BanJailContent(opts)), 0644)
+	changed, err := managed.WriteManagedFileIfChanged(runner, fail2banJailPath, []byte(Fail2BanJailContent(opts)), 0644)
 	if err != nil {
 		return err
+	}
+	if changed {
+		if err := runner.Run("fail2ban-client", "-t"); err != nil {
+			return fmt.Errorf("validate fail2ban configuration: %w", err)
+		}
 	}
 	if err := runner.Run("systemctl", "enable", "--now", "fail2ban"); err != nil {
 		return err
 	}
 	if changed {
 		return runner.Run("systemctl", "restart", "fail2ban")
+	}
+	return nil
+}
+
+func validateSingleLineOption(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s must not be empty", name)
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return fmt.Errorf("%s must be a single line", name)
 	}
 	return nil
 }

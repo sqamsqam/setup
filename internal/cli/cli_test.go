@@ -296,6 +296,51 @@ func TestRunFirewallAllow(t *testing.T) {
 	}
 }
 
+func TestRunFirewallDeleteRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "network", "delete", "--number", "2"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "ufw") {
+		t.Fatalf("unexpected ufw command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunFirewallDeleteWithYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "network", "delete", "--number", "2", "--yes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "ufw --force delete 2") {
+		t.Fatalf("expected delete command: %s", dryBuf.String())
+	}
+}
+
+func TestRunFirewallResetRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "network", "reset"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "ufw") {
+		t.Fatalf("unexpected ufw command without --yes: %s", dryBuf.String())
+	}
+}
+
 func TestRunDockerLogsConfig(t *testing.T) {
 	var dryBuf bytes.Buffer
 	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
@@ -308,6 +353,36 @@ func TestRunDockerLogsConfig(t *testing.T) {
 	}
 	if !strings.Contains(dryBuf.String(), "systemctl restart docker") {
 		t.Fatalf("expected docker restart in output: %s", dryBuf.String())
+	}
+}
+
+func TestRunDockerPruneRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "containers", "prune", "--containers"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "docker container prune") {
+		t.Fatalf("unexpected prune command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunDockerPruneWithYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "containers", "prune", "--containers", "--yes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "docker container prune -f") {
+		t.Fatalf("expected prune command: %s", dryBuf.String())
 	}
 }
 

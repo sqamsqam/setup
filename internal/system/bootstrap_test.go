@@ -302,6 +302,23 @@ func TestConfigureUnattendedUpgradesReturnsReadError(t *testing.T) {
 	}
 }
 
+func TestConfigureUnattendedUpgradesRefusesUnmanagedFile(t *testing.T) {
+	runner := &sshTestRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files: map[string][]byte{
+			autoUpgradesConfig: []byte(`APT::Periodic::Unattended-Upgrade "0";`),
+		},
+	}
+
+	err := configureUnattendedUpgrades(runner)
+	if err == nil {
+		t.Fatal("expected unmanaged file error")
+	}
+	if got := string(runner.files[autoUpgradesConfig]); got != `APT::Periodic::Unattended-Upgrade "0";` {
+		t.Fatalf("unmanaged config changed to %q", got)
+	}
+}
+
 func TestGoProfileScript(t *testing.T) {
 	content := "# Managed by setup — do not edit\nexport PATH=\"/usr/local/go/bin:$PATH\"\n"
 	if !strings.Contains(content, "/usr/local/go/bin") {
@@ -349,7 +366,7 @@ func TestBootstrapWithDryRunner(t *testing.T) {
 
 func TestInstallSSHDropInRollsBackExistingFile(t *testing.T) {
 	path := "/etc/ssh/sshd_config.d/99-test.conf"
-	oldContent := []byte("old")
+	oldContent := []byte("# Managed by setup — do not edit\nold")
 	runner := &sshTestRunner{
 		DryRunner: setupexec.NewDryRunner(),
 		files:     map[string][]byte{path: oldContent},
@@ -360,7 +377,7 @@ func TestInstallSSHDropInRollsBackExistingFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if got := string(runner.files[path]); got != "old" {
+	if got := string(runner.files[path]); got != string(oldContent) {
 		t.Fatalf("expected rollback to old content, got %q", got)
 	}
 }
@@ -379,6 +396,39 @@ func TestInstallSSHDropInRemovesNewFileOnRollback(t *testing.T) {
 	}
 	if _, ok := runner.files[path]; ok {
 		t.Fatal("expected new file to be removed")
+	}
+}
+
+func TestInstallSSHDropInRefusesUnmanagedFile(t *testing.T) {
+	path := "/etc/ssh/sshd_config.d/99-test.conf"
+	runner := &sshTestRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files:     map[string][]byte{path: []byte("local ssh config")},
+	}
+
+	err := installSSHDropIn(runner, path, []byte("# Managed by setup — do not edit\nnew"))
+	if err == nil {
+		t.Fatal("expected unmanaged file error")
+	}
+	if got := string(runner.files[path]); got != "local ssh config" {
+		t.Fatalf("unmanaged file changed to %q", got)
+	}
+}
+
+func TestInstallSSHDropInReturnsReadErrorWithoutRollback(t *testing.T) {
+	path := "/etc/ssh/sshd_config.d/99-test.conf"
+	runner := &sshTestRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files:     map[string][]byte{path: []byte("unreadable old content")},
+		readErr:   os.ErrPermission,
+	}
+
+	err := installSSHDropIn(runner, path, []byte("# Managed by setup — do not edit\nnew"))
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	if got := string(runner.files[path]); got != "unreadable old content" {
+		t.Fatalf("file should not be changed or removed after read error, got %q", got)
 	}
 }
 

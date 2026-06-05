@@ -167,6 +167,82 @@ func TestWriteFileIfChangedReturnsReadError(t *testing.T) {
 	}
 }
 
+func TestWriteManagedFileIfChangedRequiresMarker(t *testing.T) {
+	runner := newManagedTestRunner()
+
+	changed, err := WriteManagedFileIfChanged(runner, "/etc/example.conf", []byte("unmarked"), 0644)
+	if err == nil {
+		t.Fatal("expected marker error")
+	}
+	if changed {
+		t.Fatal("expected changed=false")
+	}
+	if len(runner.ops) != 0 {
+		t.Fatalf("unexpected operations before marker validation: %v", runner.ops)
+	}
+}
+
+func TestWriteManagedFileIfChangedRefusesUnmanagedExistingFile(t *testing.T) {
+	runner := newManagedTestRunner()
+	path := "/etc/example.conf"
+	runner.files[path] = []byte("local admin content\n")
+
+	changed, err := WriteManagedFileIfChanged(runner, path, []byte(Marker+"new"), 0644)
+	if err == nil {
+		t.Fatal("expected unmanaged file error")
+	}
+	if changed {
+		t.Fatal("expected changed=false")
+	}
+	if got := string(runner.files[path]); got != "local admin content\n" {
+		t.Fatalf("existing file changed to %q", got)
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "create-temp:") || strings.HasPrefix(op, "write:") || strings.HasPrefix(op, "rename:") {
+			t.Fatalf("unexpected write path after unmanaged refusal: %v", runner.ops)
+		}
+	}
+}
+
+func TestWriteManagedFileIfChangedReplacesManagedExistingFile(t *testing.T) {
+	runner := newManagedTestRunner()
+	path := "/etc/example.conf"
+	runner.files[path] = []byte(Marker + "old")
+
+	changed, err := WriteManagedFileIfChanged(runner, path, []byte(Marker+"new"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+	if got := string(runner.files[path]); got != Marker+"new" {
+		t.Fatalf("final file = %q", got)
+	}
+	if !containsOp(runner.ops, "chmod:/etc/.setup-test") {
+		t.Fatalf("expected chmod before rename: %v", runner.ops)
+	}
+}
+
+func TestWriteManagedFileIfChangedSkipsIdenticalManagedFile(t *testing.T) {
+	runner := newManagedTestRunner()
+	path := "/etc/example.conf"
+	runner.files[path] = []byte(Marker + "same")
+
+	changed, err := WriteManagedFileIfChanged(runner, path, []byte(Marker+"same"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("expected unchanged result")
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "write:") || strings.HasPrefix(op, "rename:") {
+			t.Fatalf("unexpected write operation for unchanged managed file: %v", runner.ops)
+		}
+	}
+}
+
 func containsOp(ops []string, want string) bool {
 	for _, op := range ops {
 		if op == want {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -42,7 +43,7 @@ func Create(runner setupexec.CmdRunner, cfg Config) error {
 	if err := runner.Chown(dir, acct.uid, acct.gid); err != nil {
 		return err
 	}
-	changed, err := managed.WriteFileIfChanged(runner, path, []byte(UnitContent(cfg)), 0644)
+	changed, err := managed.WriteManagedFileIfChanged(runner, path, []byte(UnitContent(cfg)), 0644)
 	if err != nil {
 		return err
 	}
@@ -64,6 +65,9 @@ func Status(runner setupexec.CmdRunner, user, name string) (string, error) {
 	if err := validateUserAndName(user, name); err != nil {
 		return "", err
 	}
+	if err := requireManagedUnit(runner, user, name); err != nil {
+		return "", err
+	}
 	return runner.Output("sudo", "-iu", user, "--", "systemctl", "--user", "status", UnitName(name), "--no-pager")
 }
 
@@ -71,11 +75,17 @@ func Logs(runner setupexec.CmdRunner, user, name string) (string, error) {
 	if err := validateUserAndName(user, name); err != nil {
 		return "", err
 	}
+	if err := requireManagedUnit(runner, user, name); err != nil {
+		return "", err
+	}
 	return runner.Output("sudo", "-iu", user, "--", "journalctl", "--user", "-u", UnitName(name), "--no-pager", "-n", "100")
 }
 
 func Restart(runner setupexec.CmdRunner, user, name string) error {
 	if err := validateUserAndName(user, name); err != nil {
+		return err
+	}
+	if err := requireManagedUnit(runner, user, name); err != nil {
 		return err
 	}
 	return runner.RunAsUser(user, "systemctl", "--user", "restart", UnitName(name))
@@ -142,6 +152,28 @@ func validateUserAndName(username, name string) error {
 	name = strings.TrimPrefix(name, "setup-")
 	if !serviceNameRe.MatchString(name) {
 		return fmt.Errorf("service name must match %s", serviceNameRe.String())
+	}
+	return nil
+}
+
+func requireManagedUnit(runner setupexec.CmdRunner, username, name string) error {
+	acct, err := lookupAccount(runner, username)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(acct.home, ".config", "systemd", "user", UnitName(name))
+	content, err := runner.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("managed service unit %s does not exist", path)
+		}
+		return err
+	}
+	if setupexec.IsDryRun(runner) && len(content) == 0 {
+		return nil
+	}
+	if !managed.IsMarked(content) {
+		return fmt.Errorf("refusing to operate on unmanaged service unit %s", path)
 	}
 	return nil
 }

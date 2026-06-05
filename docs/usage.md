@@ -73,8 +73,8 @@ sudo setup network status
 sudo setup network list
 sudo setup network enable --allow-ssh
 sudo setup network allow --port 443 --proto tcp
-sudo setup network delete --number 2
-sudo setup network reset
+sudo setup network delete --number 2 --yes
+sudo setup network reset --yes
 
 sudo setup guard install
 sudo setup guard status
@@ -82,7 +82,7 @@ sudo setup guard unban --ip 203.0.113.10
 
 sudo setup containers log-rotation
 sudo setup containers disk
-sudo setup containers prune --containers --images --build-cache
+sudo setup containers prune --containers --images --build-cache --yes
 
 sudo setup updates check
 sudo setup updates upgrade
@@ -125,6 +125,8 @@ Visual demos must use `--demo` so they stay deterministic and safe.
 - SSH config is validated with `sshd -t` before restart.
 - `setup user ssh allow` and `setup user ssh deny` manage only the setup-owned `AllowUsers` list instead of scanning all UID >= 1000 users.
 - Passwordless sudo is managed only through setup-owned `/etc/sudoers.d/<user>` files. Disable refuses to remove unmanaged sudoers files.
+- Setup-owned admin files, including SSH hardening, unattended-upgrades, fail2ban, and managed user-service units, refuse to replace unmanaged existing files.
+- Destructive admin commands such as firewall rule deletion, firewall reset, and Docker prune require `--yes`.
 - Group commands require the group to already exist; they do not create groups implicitly.
 - Service users are setup-owned no-login system accounts with homes under `/var/lib/<user>`. They are not modifications to distro-owned accounts such as `root`, `www-data`, `sshd`, or `nobody`.
 - `setup user disable` locks access and removes setup-managed SSH, linger, and sudo access without deleting data. `setup user delete --remove-home` is required for irreversible home removal.
