@@ -86,6 +86,11 @@ func writeSudoers(runner setupexec.CmdRunner, username string) error {
 
 	setupexec.PrintStep(fmt.Sprintf("Writing %s", path))
 
+	oldContent, _ := runner.ReadFile(path)
+	if bytes.Equal(oldContent, []byte(content)) {
+		return nil
+	}
+
 	if err := runner.MkdirAll("/etc/sudoers.d", 0755); err != nil {
 		return err
 	}
@@ -99,14 +104,11 @@ func writeSudoers(runner setupexec.CmdRunner, username string) error {
 	if err := runner.WriteFile(tmpPath, []byte(content), 0440); err != nil {
 		return fmt.Errorf("write temp sudoers: %w", err)
 	}
-
-	if err := runner.Chown(tmpPath, 0, 0); err != nil {
+	if err := runner.Chmod(tmpPath, 0440); err != nil {
 		return err
 	}
-
-	oldContent, _ := runner.ReadFile(path)
-	if bytes.Equal(oldContent, []byte(content)) {
-		return nil
+	if err := runner.Chown(tmpPath, 0, 0); err != nil {
+		return err
 	}
 
 	if err := runner.Rename(tmpPath, path); err != nil {
@@ -200,6 +202,9 @@ func updateAllowUsers(runner setupexec.CmdRunner) error {
 
 	if err := runner.WriteFile(tmpPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("write temp AllowUsers: %w", err)
+	}
+	if err := runner.Chmod(tmpPath, 0644); err != nil {
+		return fmt.Errorf("chmod temp AllowUsers: %w", err)
 	}
 
 	if err := runner.Rename(tmpPath, allowFile); err != nil {

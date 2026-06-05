@@ -374,6 +374,9 @@ func installGlow(runner setupexec.CmdRunner) error {
 	if err := runner.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
 		return fmt.Errorf("write temp charm.list: %w", err)
 	}
+	if err := runner.Chmod(tmpList, 0644); err != nil {
+		return fmt.Errorf("chmod temp charm.list: %w", err)
+	}
 	if err := runner.Rename(tmpList, listPath); err != nil {
 		return err
 	}
@@ -434,6 +437,9 @@ func installGh(runner setupexec.CmdRunner) error {
 
 	if err := runner.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
 		return fmt.Errorf("write temp github-cli.list: %w", err)
+	}
+	if err := runner.Chmod(tmpList, 0644); err != nil {
+		return fmt.Errorf("chmod temp github-cli.list: %w", err)
 	}
 	if err := runner.Rename(tmpList, listPath); err != nil {
 		return err

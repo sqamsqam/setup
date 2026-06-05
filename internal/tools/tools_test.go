@@ -264,6 +264,19 @@ func TestInstallAptKeyVerifiesTempBeforeFinalRename(t *testing.T) {
 					t.Fatalf("%s source missing %q:\n%s", tt.name, want, source)
 				}
 			}
+
+			sourceTemp, sourceRenameAt := runner.renamedFrom(tt.sourcePath)
+			if sourceTemp == "" {
+				t.Fatalf("missing source list rename to %s; operations: %v", tt.sourcePath, runner.ops)
+			}
+			sourceWriteAt := runner.indexOf("write:" + sourceTemp + ":644")
+			sourceChmodAt := runner.indexOf("chmod:" + sourceTemp + ":644")
+			if sourceWriteAt == -1 || sourceChmodAt == -1 {
+				t.Fatalf("missing source list write/chmod operations for %s; operations: %v", sourceTemp, runner.ops)
+			}
+			if sourceWriteAt >= sourceChmodAt || sourceChmodAt >= sourceRenameAt {
+				t.Fatalf("want source list write before chmod before rename, got operations: %v", runner.ops)
+			}
 		})
 	}
 }
@@ -468,6 +481,15 @@ func (r *aptKeyTestRunner) renamedTo(path string) bool {
 		}
 	}
 	return false
+}
+
+func (r *aptKeyTestRunner) renamedFrom(path string) (string, int) {
+	for i, op := range r.ops {
+		if strings.HasPrefix(op, "rename:") && strings.HasSuffix(op, "->"+path) {
+			return strings.TrimSuffix(strings.TrimPrefix(op, "rename:"), "->"+path), i
+		}
+	}
+	return "", -1
 }
 
 func (r *aptKeyTestRunner) indexOf(prefix string) int {

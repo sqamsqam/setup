@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-06-05
+
+### Fixed
+- Managed sudoers, SSH AllowUsers, and apt source list writes now preserve their intended file modes when atomically replacing files.
+
 ## [0.8.6] - 2026-06-01
 
 ### Changed
