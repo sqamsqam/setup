@@ -13,12 +13,14 @@ type userFileRunner struct {
 	*setupexec.DryRunner
 	files map[string][]byte
 	ops   []string
+	errs  map[string]error
 }
 
 func newUserFileRunner() *userFileRunner {
 	return &userFileRunner{
 		DryRunner: setupexec.NewDryRunner(),
 		files:     make(map[string][]byte),
+		errs:      make(map[string]error),
 	}
 }
 
@@ -37,6 +39,9 @@ func (r *userFileRunner) Output(name string, args ...string) (string, error) {
 
 func (r *userFileRunner) ReadFile(path string) ([]byte, error) {
 	r.ops = append(r.ops, "read:"+path)
+	if err := r.errs["read:"+path]; err != nil {
+		return nil, err
+	}
 	data, ok := r.files[path]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -153,6 +158,44 @@ func TestUpdateAllowUsersChmodsTempBeforeRename(t *testing.T) {
 	}
 	if indexOp(runner.ops, "run:sshd -t") > indexOp(runner.ops, "run:systemctl restart ssh") {
 		t.Fatalf("sshd validation should happen before restart: %v", runner.ops)
+	}
+}
+
+func TestInstallSSHKeyChmodsTempBeforeRename(t *testing.T) {
+	runner := newUserFileRunner()
+	acct := accountInfo{uid: 1000, gid: 1000, home: "/home/dev"}
+
+	if err := installSSHKey(runner, "dev", acct, "ssh-ed25519 AAAATESTKEY"); err != nil {
+		t.Fatal(err)
+	}
+
+	tmpPath := "/home/dev/.ssh/.setup-authorized-keys-test"
+	renameOp := "rename:" + tmpPath + "->/home/dev/.ssh/authorized_keys"
+	chmodOp := "chmod:" + tmpPath + ":-rw-------"
+	if indexOp(runner.ops, chmodOp) == -1 {
+		t.Fatalf("missing chmod operation %q from %v", chmodOp, runner.ops)
+	}
+	if indexOp(runner.ops, chmodOp) > indexOp(runner.ops, renameOp) {
+		t.Fatalf("chmod happened after rename: %v", runner.ops)
+	}
+	if got := string(runner.files["/home/dev/.ssh/authorized_keys"]); got != "ssh-ed25519 AAAATESTKEY\n" {
+		t.Fatalf("authorized_keys content = %q", got)
+	}
+}
+
+func TestInstallSSHKeyReturnsReadError(t *testing.T) {
+	runner := newUserFileRunner()
+	runner.errs["read:/home/dev/.ssh/authorized_keys"] = os.ErrPermission
+	acct := accountInfo{uid: 1000, gid: 1000, home: "/home/dev"}
+
+	err := installSSHKey(runner, "dev", acct, "ssh-ed25519 AAAATESTKEY")
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "create-temp:") || strings.HasPrefix(op, "write:") || strings.HasPrefix(op, "rename:") {
+			t.Fatalf("unexpected write path after read error: %v", runner.ops)
+		}
 	}
 }
 

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-06-05
+
+### Fixed
+- Managed config writers now fail fast on unreadable existing files instead of replacing from ambiguous state.
+- SSH `authorized_keys` and Go profile writes now explicitly preserve their intended file modes during atomic replacement.
+- yq and GitHub release `.deb` installers now clean up temporary download files when downloads fail.
+
 ## [0.8.7] - 2026-06-05
 
 ### Fixed

@@ -80,9 +80,13 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 `) + "\n"
 
-	oldContent, _ := runner.ReadFile(autoUpgradesConfig)
-	if bytes.Equal(oldContent, []byte(content)) {
-		return nil
+	oldContent, err := runner.ReadFile(autoUpgradesConfig)
+	if err == nil {
+		if bytes.Equal(oldContent, []byte(content)) {
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 
 	return atomicWriteFile(runner, autoUpgradesConfig, []byte(content), 0644)

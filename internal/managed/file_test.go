@@ -27,6 +27,9 @@ func newManagedTestRunner() *managedTestRunner {
 
 func (r *managedTestRunner) ReadFile(path string) ([]byte, error) {
 	r.ops = append(r.ops, "read:"+path)
+	if err := r.errs["read"]; err != nil {
+		return nil, err
+	}
 	data, ok := r.files[path]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -143,6 +146,24 @@ func TestWriteFileIfChangedCleansTempOnWriteError(t *testing.T) {
 	}
 	if _, ok := runner.files["/etc/.setup-test"]; ok {
 		t.Fatal("expected temp file cleanup")
+	}
+}
+
+func TestWriteFileIfChangedReturnsReadError(t *testing.T) {
+	runner := newManagedTestRunner()
+	runner.errs["read"] = errors.New("permission denied")
+
+	changed, err := WriteFileIfChanged(runner, "/etc/example.conf", []byte("new"), 0644)
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	if changed {
+		t.Fatal("expected changed=false on read error")
+	}
+	for _, op := range runner.ops {
+		if strings.HasPrefix(op, "create-temp:") || strings.HasPrefix(op, "write:") || strings.HasPrefix(op, "rename:") {
+			t.Fatalf("unexpected write path after read error: %v", runner.ops)
+		}
 	}
 }
 

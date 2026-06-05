@@ -108,6 +108,21 @@ func InstallGo(runner setupexec.CmdRunner) error {
 		return fmt.Errorf("extract Go: %w", err)
 	}
 
+	if err := installGoProfile(runner); err != nil {
+		return err
+	}
+
+	verifyRunner := setupexec.NewRealRunner()
+	verifyRunner.Env = append(verifyRunner.Env, "PATH=/usr/local/go/bin:"+os.Getenv("PATH"))
+	out, err := verifyRunner.Output("/usr/local/go/bin/go", "version")
+	if err != nil {
+		return fmt.Errorf("verify Go installation: %w", err)
+	}
+	setupexec.PrintDone(out)
+	return nil
+}
+
+func installGoProfile(runner setupexec.CmdRunner) error {
 	profileContent := "# Managed by setup — do not edit\n"
 	profileContent += "export PATH=\"/usr/local/go/bin:$PATH\"\n"
 	tmpProfile, err := runner.CreateTemp("/etc/profile.d", ".setup-go-profile-*.sh")
@@ -119,17 +134,12 @@ func InstallGo(runner setupexec.CmdRunner) error {
 	if err := runner.WriteFile(tmpProfile, []byte(profileContent), 0644); err != nil {
 		return fmt.Errorf("write temp go profile: %w", err)
 	}
+	if err := runner.Chmod(tmpProfile, 0644); err != nil {
+		return fmt.Errorf("chmod temp go profile: %w", err)
+	}
 	if err := runner.Rename(tmpProfile, "/etc/profile.d/go.sh"); err != nil {
 		return err
 	}
-
-	verifyRunner := setupexec.NewRealRunner()
-	verifyRunner.Env = append(verifyRunner.Env, "PATH=/usr/local/go/bin:"+os.Getenv("PATH"))
-	out, err := verifyRunner.Output("/usr/local/go/bin/go", "version")
-	if err != nil {
-		return fmt.Errorf("verify Go installation: %w", err)
-	}
-	setupexec.PrintDone(out)
 	return nil
 }
 

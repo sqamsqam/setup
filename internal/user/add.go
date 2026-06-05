@@ -133,7 +133,10 @@ func installSSHKey(runner setupexec.CmdRunner, username string, acct accountInfo
 	}
 
 	// Read existing authorized_keys if any
-	existing, _ := runner.ReadFile(authPath)
+	existing, readErr := runner.ReadFile(authPath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return fmt.Errorf("read authorized_keys: %w", readErr)
+	}
 	existingKeys := strings.TrimSpace(string(existing))
 
 	// Check if this key is already present (idempotency)
@@ -163,6 +166,9 @@ func installSSHKey(runner setupexec.CmdRunner, username string, acct accountInfo
 
 	if err := runner.WriteFile(tmpPath, []byte(newData), 0600); err != nil {
 		return fmt.Errorf("write authorized_keys: %w", err)
+	}
+	if err := runner.Chmod(tmpPath, 0600); err != nil {
+		return fmt.Errorf("chmod authorized_keys: %w", err)
 	}
 	if err := runner.Chown(tmpPath, acct.uid, acct.gid); err != nil {
 		return fmt.Errorf("chown authorized_keys: %w", err)

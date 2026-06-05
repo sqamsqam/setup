@@ -15,11 +15,15 @@ import (
 
 type sshTestRunner struct {
 	*setupexec.DryRunner
-	files  map[string][]byte
-	runErr error
+	files   map[string][]byte
+	runErr  error
+	readErr error
 }
 
 func (s *sshTestRunner) ReadFile(path string) ([]byte, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
 	data, ok := s.files[path]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -279,6 +283,22 @@ APT::Periodic::Unattended-Upgrade "1";
 		if !strings.Contains(content, exp) {
 			t.Errorf("expected %q in unattended upgrades config", exp)
 		}
+	}
+}
+
+func TestConfigureUnattendedUpgradesReturnsReadError(t *testing.T) {
+	runner := &sshTestRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files:     map[string][]byte{},
+		readErr:   os.ErrPermission,
+	}
+
+	err := configureUnattendedUpgrades(runner)
+	if err == nil {
+		t.Fatal("expected read error")
+	}
+	if len(runner.files) != 0 {
+		t.Fatalf("unexpected file writes after read error: %#v", runner.files)
 	}
 }
 

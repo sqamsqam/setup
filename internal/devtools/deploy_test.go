@@ -2,6 +2,8 @@ package devtools
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -200,4 +202,79 @@ func TestValidateTargetUserUsesPasswdHome(t *testing.T) {
 	if got.home != "/srv/dev" {
 		t.Fatalf("expected /srv/dev, got %q", got.home)
 	}
+}
+
+func TestInstallGoProfileChmodsTempBeforeRename(t *testing.T) {
+	runner := newDevtoolsFileRunner()
+
+	if err := installGoProfile(runner); err != nil {
+		t.Fatal(err)
+	}
+
+	tmpPath := "/etc/profile.d/.setup-go-profile-test.sh"
+	renameOp := "rename:" + tmpPath + "->/etc/profile.d/go.sh"
+	chmodOp := "chmod:" + tmpPath + ":-rw-r--r--"
+	if indexDevtoolsOp(runner.ops, chmodOp) == -1 {
+		t.Fatalf("missing chmod operation %q from %v", chmodOp, runner.ops)
+	}
+	if indexDevtoolsOp(runner.ops, chmodOp) > indexDevtoolsOp(runner.ops, renameOp) {
+		t.Fatalf("chmod happened after rename: %v", runner.ops)
+	}
+	got := string(runner.files["/etc/profile.d/go.sh"])
+	if !strings.HasPrefix(got, "# Managed by setup") || !strings.Contains(got, "/usr/local/go/bin") {
+		t.Fatalf("unexpected profile content: %q", got)
+	}
+}
+
+type devtoolsFileRunner struct {
+	*setupexec.DryRunner
+	files map[string][]byte
+	ops   []string
+}
+
+func newDevtoolsFileRunner() *devtoolsFileRunner {
+	return &devtoolsFileRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files:     make(map[string][]byte),
+	}
+}
+
+func (r *devtoolsFileRunner) WriteFile(path string, data []byte, perm os.FileMode) error {
+	r.ops = append(r.ops, "write:"+path+":"+perm.String())
+	r.files[path] = append([]byte(nil), data...)
+	return nil
+}
+
+func (r *devtoolsFileRunner) CreateTemp(dir, pattern string) (string, error) {
+	path := filepath.Join(dir, strings.Replace(pattern, "*", "test", 1))
+	r.ops = append(r.ops, "create-temp:"+path)
+	r.files[path] = nil
+	return path, nil
+}
+
+func (r *devtoolsFileRunner) Rename(oldpath, newpath string) error {
+	r.ops = append(r.ops, "rename:"+oldpath+"->"+newpath)
+	r.files[newpath] = append([]byte(nil), r.files[oldpath]...)
+	delete(r.files, oldpath)
+	return nil
+}
+
+func (r *devtoolsFileRunner) Chmod(path string, mode os.FileMode) error {
+	r.ops = append(r.ops, "chmod:"+path+":"+mode.String())
+	return nil
+}
+
+func (r *devtoolsFileRunner) Remove(path string) error {
+	r.ops = append(r.ops, "remove:"+path)
+	delete(r.files, path)
+	return nil
+}
+
+func indexDevtoolsOp(ops []string, want string) int {
+	for i, op := range ops {
+		if op == want {
+			return i
+		}
+	}
+	return -1
 }

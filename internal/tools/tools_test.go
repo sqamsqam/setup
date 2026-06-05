@@ -101,6 +101,41 @@ func TestInstallYqWithDryRunner(t *testing.T) {
 	}
 }
 
+func TestInstallYqCleansChecksumTempOnDownloadError(t *testing.T) {
+	runner := newYqCleanupRunner("checksums")
+
+	err := installYq(runner)
+	if err == nil {
+		t.Fatal("expected checksum download error")
+	}
+	for _, want := range []string{
+		"remove:/usr/local/bin/.setup-yq-1",
+		"remove:/usr/local/bin/.setup-yq-2.sha256",
+	} {
+		if !containsString(runner.ops, want) {
+			t.Fatalf("missing cleanup operation %q from %v", want, runner.ops)
+		}
+	}
+}
+
+func TestInstallYqCleansOrderTempOnDownloadError(t *testing.T) {
+	runner := newYqCleanupRunner("checksums_hashes_order")
+
+	err := installYq(runner)
+	if err == nil {
+		t.Fatal("expected checksum order download error")
+	}
+	for _, want := range []string{
+		"remove:/usr/local/bin/.setup-yq-1",
+		"remove:/usr/local/bin/.setup-yq-2.sha256",
+		"remove:/usr/local/bin/.setup-yq-order-3",
+	} {
+		if !containsString(runner.ops, want) {
+			t.Fatalf("missing cleanup operation %q from %v", want, runner.ops)
+		}
+	}
+}
+
 func TestInstallGitHubDebDryRunShortCircuit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -130,6 +165,70 @@ func TestInstallGitHubDebDryRunShortCircuit(t *testing.T) {
 	if !strings.Contains(output, "apt install -y ripgrep") {
 		t.Errorf("expected dry-run package install, got: %q", output)
 	}
+}
+
+func TestInstallGitHubDebCleansTempOnDownloadError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"assets":[{"name":"ripgrep_14.1.0_amd64.deb","browser_download_url":"https://example.com/rg.deb"}]}`))
+	}))
+	defer server.Close()
+
+	github.SetAPIBase(server.URL)
+	github.SetHTTPClient(server.Client())
+	t.Cleanup(func() {
+		github.SetAPIBase("https://api.github.com")
+		github.SetHTTPClient(&http.Client{Timeout: 30 * time.Second})
+	})
+	t.Setenv("GITHUB_TOKEN", "")
+
+	runner := newGitHubDebFailureRunner()
+	err := installGitHubDeb(runner, "ripgrep", "ripgrep", "BurntSushi/ripgrep", `ripgrep_.*_amd64\.deb$`)
+	if err == nil {
+		t.Fatal("expected download error")
+	}
+	if runner.debPath == "" {
+		t.Fatalf("did not capture deb path; operations: %v", runner.ops)
+	}
+	if !containsString(runner.ops, "remove:"+runner.debPath) {
+		t.Fatalf("missing temp deb cleanup for %s; operations: %v", runner.debPath, runner.ops)
+	}
+}
+
+type githubDebFailureRunner struct {
+	*aptKeyTestRunner
+	debPath string
+}
+
+func newGitHubDebFailureRunner() *githubDebFailureRunner {
+	return &githubDebFailureRunner{aptKeyTestRunner: newAptKeyTestRunner()}
+}
+
+func (r *githubDebFailureRunner) Output(name string, args ...string) (string, error) {
+	r.ops = append(r.ops, "output:"+name+" "+strings.Join(args, " "))
+	if name == "dpkg-query" {
+		return "", errors.New("not installed")
+	}
+	return "", nil
+}
+
+func (r *githubDebFailureRunner) Run(name string, args ...string) error {
+	r.ops = append(r.ops, "run:"+name+" "+strings.Join(args, " "))
+	if name == "wget" {
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "-O" {
+				r.debPath = args[i+1]
+			}
+		}
+		return errors.New("download failed")
+	}
+	return nil
+}
+
+func (r *githubDebFailureRunner) Remove(path string) error {
+	r.ops = append(r.ops, "remove:"+path)
+	delete(r.files, path)
+	return os.Remove(path)
 }
 
 func TestEnsureDepsWithDryRunner(t *testing.T) {
@@ -499,4 +598,47 @@ func (r *aptKeyTestRunner) indexOf(prefix string) int {
 		}
 	}
 	return -1
+}
+
+type yqCleanupRunner struct {
+	*setupexec.DryRunner
+	ops        []string
+	tempN      int
+	failNeedle string
+}
+
+func newYqCleanupRunner(failNeedle string) *yqCleanupRunner {
+	return &yqCleanupRunner{
+		DryRunner:  setupexec.NewDryRunner(),
+		failNeedle: failNeedle,
+	}
+}
+
+func (r *yqCleanupRunner) Run(name string, args ...string) error {
+	r.ops = append(r.ops, "run:"+name+" "+strings.Join(args, " "))
+	if name == "wget" && strings.Contains(strings.Join(args, " "), r.failNeedle) {
+		return errors.New("download failed")
+	}
+	return nil
+}
+
+func (r *yqCleanupRunner) CreateTemp(dir, pattern string) (string, error) {
+	r.tempN++
+	path := filepath.Join(dir, strings.Replace(pattern, "*", fmt.Sprintf("%d", r.tempN), 1))
+	r.ops = append(r.ops, "create-temp:"+path)
+	return path, nil
+}
+
+func (r *yqCleanupRunner) Remove(path string) error {
+	r.ops = append(r.ops, "remove:"+path)
+	return nil
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

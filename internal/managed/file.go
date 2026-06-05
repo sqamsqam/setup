@@ -11,9 +11,13 @@ import (
 const Marker = "# Managed by setup — do not edit\n"
 
 func WriteFileIfChanged(runner setupexec.CmdRunner, path string, data []byte, perm os.FileMode) (bool, error) {
-	oldContent, _ := runner.ReadFile(path)
-	if bytes.Equal(oldContent, data) {
-		return false, nil
+	oldContent, err := runner.ReadFile(path)
+	if err == nil {
+		if bytes.Equal(oldContent, data) {
+			return false, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return false, err
 	}
 
 	dir := filepath.Dir(path)

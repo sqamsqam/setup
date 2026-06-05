@@ -160,11 +160,11 @@ func installGitHubDeb(runner setupexec.CmdRunner, commandName, aptPackage, repo,
 	}
 	debPath := tmpF.Name()
 	_ = tmpF.Close()
+	defer func() { _ = runner.Remove(debPath) }()
 
 	if err := runner.Run("wget", "-q", debURL, "-O", debPath); err != nil {
 		return fmt.Errorf("download %s: %w", repo, err)
 	}
-	defer func() { _ = runner.Remove(debPath) }()
 
 	if err := verifyDebChecksum(runner, repo, debPath, debName); err != nil {
 		setupexec.PrintStep(fmt.Sprintf("%s .deb checksum unavailable or invalid (%v); using signed Ubuntu apt package", repo, err))
@@ -281,20 +281,20 @@ func installYq(runner setupexec.CmdRunner) error {
 	if err != nil {
 		return fmt.Errorf("create temp yq checksum file: %w", err)
 	}
+	defer func() { _ = runner.Remove(shaPath) }()
 	if err := runner.Run("wget", "-q", shaURL, "-O", shaPath); err != nil {
 		return fmt.Errorf("download yq checksum: %w", err)
 	}
-	defer func() { _ = runner.Remove(shaPath) }()
 
 	orderURL := "https://github.com/mikefarah/yq/releases/latest/download/checksums_hashes_order"
 	orderPath, err := runner.CreateTemp(filepath.Dir(yqPath), ".setup-yq-order-*")
 	if err != nil {
 		return fmt.Errorf("create temp yq checksum order file: %w", err)
 	}
+	defer func() { _ = runner.Remove(orderPath) }()
 	if err := runner.Run("wget", "-q", orderURL, "-O", orderPath); err != nil {
 		return fmt.Errorf("download yq checksum order: %w", err)
 	}
-	defer func() { _ = runner.Remove(orderPath) }()
 
 	if setupexec.IsDryRun(runner) {
 		return nil
