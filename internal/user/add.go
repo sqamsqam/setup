@@ -410,26 +410,6 @@ func installSSHKey(runner setupexec.CmdRunner, username string, acct accountInfo
 	return nil
 }
 
-func updateAllowUsers(runner setupexec.CmdRunner) error {
-	return updateAllowUsersList(runner, func(users []string) []string { return users })
-}
-
-func listNonSystemUsers(runner setupexec.CmdRunner) ([]string, error) {
-	out, err := runner.Output("awk", "-F:", `$3 >= 1000 && $1 != "nobody" { print $1 }`, "/etc/passwd")
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	var users []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			users = append(users, line)
-		}
-	}
-	return users, nil
-}
-
 func lookupAccount(runner setupexec.CmdRunner, username string) (accountInfo, error) {
 	acct, err := lookupAnyAccount(runner, username)
 	if err != nil {
