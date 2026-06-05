@@ -9,8 +9,12 @@
 ### Changed
 - Setup-managed SSH `AllowUsers` now tracks an explicit requested-user list instead of regenerating from every UID >= 1000 account.
 - Passwordless sudo disable now removes only setup-marked sudoers files and refuses unmanaged sudoers files.
-- Setup-owned admin files now refuse to replace unmanaged existing files for SSH hardening, unattended upgrades, fail2ban, and managed user-service units.
 - Firewall rule deletion, firewall reset, and Docker prune now require `--yes`.
+
+### Security
+- Setup-owned admin files now refuse to replace unmanaged existing files for SSH hardening, unattended upgrades, fail2ban, and managed user-service units.
+- Managed service status, logs, and restart operations now require the target unit file to be setup-managed.
+- Fail2ban jail options now reject multiline values and validate the candidate configuration before restart.
 
 ## [0.8.8] - 2026-06-05
 
