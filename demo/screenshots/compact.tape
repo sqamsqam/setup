@@ -16,9 +16,9 @@ Show
 Type "./bin/setup-linux-amd64 --demo"
 Enter
 Wait+Screen /Fresh Ubuntu Instance Setup/
-Down 11
+Down 19
 Space
-Down 8
+Down 7
 Space
 Down
 Space

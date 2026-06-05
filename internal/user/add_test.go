@@ -11,28 +11,47 @@ import (
 
 type userFileRunner struct {
 	*setupexec.DryRunner
-	files map[string][]byte
-	ops   []string
-	errs  map[string]error
+	files  map[string][]byte
+	groups map[string][]string
+	ops    []string
+	errs   map[string]error
 }
 
 func newUserFileRunner() *userFileRunner {
 	return &userFileRunner{
 		DryRunner: setupexec.NewDryRunner(),
 		files:     make(map[string][]byte),
+		groups:    make(map[string][]string),
 		errs:      make(map[string]error),
 	}
 }
 
 func (r *userFileRunner) Run(name string, args ...string) error {
-	r.ops = append(r.ops, "run:"+name+" "+strings.Join(args, " "))
+	op := "run:" + name + " " + strings.Join(args, " ")
+	r.ops = append(r.ops, op)
+	if err := r.errs[op]; err != nil {
+		return err
+	}
 	return nil
 }
 
 func (r *userFileRunner) Output(name string, args ...string) (string, error) {
-	r.ops = append(r.ops, "output:"+name+" "+strings.Join(args, " "))
+	op := "output:" + name + " " + strings.Join(args, " ")
+	r.ops = append(r.ops, op)
+	if err := r.errs[op]; err != nil {
+		return "", err
+	}
 	if name == "awk" {
 		return "dev\nops\n", nil
+	}
+	if name == "getent" && len(args) >= 2 && args[0] == "group" {
+		return args[1] + ":x:100:", nil
+	}
+	if name == "getent" && len(args) >= 2 && args[0] == "passwd" && args[1] == "svc" {
+		return "svc:x:999:999:svc:/var/lib/svc:/usr/sbin/nologin", nil
+	}
+	if name == "id" && len(args) >= 2 && args[0] == "-nG" {
+		return strings.Join(r.groups[args[1]], " "), nil
 	}
 	return r.DryRunner.Output(name, args...)
 }
@@ -135,10 +154,10 @@ func TestWriteSudoersSkipsTempWhenContentUnchanged(t *testing.T) {
 	}
 }
 
-func TestUpdateAllowUsersChmodsTempBeforeRename(t *testing.T) {
+func TestAllowSSHChmodsTempBeforeRename(t *testing.T) {
 	runner := newUserFileRunner()
 
-	if err := updateAllowUsers(runner); err != nil {
+	if err := AllowSSH(runner, "dev"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,11 +172,122 @@ func TestUpdateAllowUsersChmodsTempBeforeRename(t *testing.T) {
 	}
 
 	got := string(runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"])
-	if got != "# Managed by setup — do not edit\nAllowUsers dev ops\n" {
+	if got != "# Managed by setup — do not edit\nAllowUsers dev\n" {
 		t.Fatalf("AllowUsers content = %q", got)
 	}
 	if indexOp(runner.ops, "run:sshd -t") > indexOp(runner.ops, "run:systemctl restart ssh") {
 		t.Fatalf("sshd validation should happen before restart: %v", runner.ops)
+	}
+}
+
+func TestDenySSHLeavesExplicitEmptyAllowUsersList(t *testing.T) {
+	runner := newUserFileRunner()
+	runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"] = []byte("# Managed by setup — do not edit\nAllowUsers dev\n")
+
+	if err := DenySSH(runner, "dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	got := string(runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"])
+	want := "# Managed by setup — do not edit\n# Empty setup-managed SSH login allow-list.\nAllowUsers setup-no-ssh-users\n"
+	if got != want {
+		t.Fatalf("AllowUsers content = %q, want %q", got, want)
+	}
+}
+
+func TestAllowSSHRollsBackOnValidationFailure(t *testing.T) {
+	runner := newUserFileRunner()
+	old := "# Managed by setup — do not edit\nAllowUsers dev\n"
+	runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"] = []byte(old)
+	runner.errs["run:sshd -t"] = os.ErrPermission
+
+	err := DenySSH(runner, "dev")
+	if err == nil {
+		t.Fatal("expected sshd validation error")
+	}
+	if got := string(runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"]); got != old {
+		t.Fatalf("expected rollback to old content, got %q", got)
+	}
+	if indexOp(runner.ops, "run:systemctl restart ssh") != -1 {
+		t.Fatalf("should not restart SSH after validation failure: %v", runner.ops)
+	}
+}
+
+func TestDisableSudoRefusesUnmanagedFile(t *testing.T) {
+	runner := newUserFileRunner()
+	runner.files["/etc/sudoers.d/dev"] = []byte("dev ALL=(ALL) NOPASSWD:ALL\n")
+
+	err := DisablePasswordlessSudo(runner, "dev")
+	if err == nil {
+		t.Fatal("expected unmanaged sudoers error")
+	}
+	if _, ok := runner.files["/etc/sudoers.d/dev"]; !ok {
+		t.Fatal("unmanaged sudoers file should remain")
+	}
+}
+
+func TestAddGroupFailsForMissingGroup(t *testing.T) {
+	runner := newUserFileRunner()
+	runner.errs["output:getent group missing"] = os.ErrNotExist
+
+	err := AddGroup(runner, "dev", "missing")
+	if err == nil {
+		t.Fatal("expected missing group error")
+	}
+}
+
+func TestDisableUserDoesNotDeleteHome(t *testing.T) {
+	runner := newUserFileRunner()
+	runner.files["/etc/sudoers.d/dev"] = []byte("# Managed by setup — do not edit\ndev ALL=(ALL) NOPASSWD:ALL\n")
+	runner.files["/etc/ssh/sshd_config.d/98-allow-users.conf"] = []byte("# Managed by setup — do not edit\nAllowUsers dev\n")
+
+	if err := DisableUser(runner, "dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, op := range runner.ops {
+		if strings.Contains(op, "deluser") || strings.Contains(op, "remove-home") {
+			t.Fatalf("disable should not delete the account or home: %v", runner.ops)
+		}
+	}
+	for _, want := range []string{
+		"run:passwd -l dev",
+		"run:loginctl disable-linger dev",
+		"remove:/etc/sudoers.d/dev",
+	} {
+		if indexOp(runner.ops, want) == -1 {
+			t.Fatalf("missing disable operation %q from %v", want, runner.ops)
+		}
+	}
+}
+
+func TestDeleteUserPreservesHomeUnlessRequested(t *testing.T) {
+	runner := newUserFileRunner()
+
+	if err := DeleteUser(runner, "dev", false); err != nil {
+		t.Fatal(err)
+	}
+	if indexOp(runner.ops, "run:deluser dev") == -1 {
+		t.Fatalf("expected deluser without remove-home: %v", runner.ops)
+	}
+	if indexOp(runner.ops, "run:deluser --remove-home dev") != -1 {
+		t.Fatalf("did not expect remove-home without flag: %v", runner.ops)
+	}
+
+	runner = newUserFileRunner()
+	if err := DeleteUser(runner, "dev", true); err != nil {
+		t.Fatal(err)
+	}
+	if indexOp(runner.ops, "run:deluser --remove-home dev") == -1 {
+		t.Fatalf("expected deluser --remove-home: %v", runner.ops)
+	}
+}
+
+func TestCreateServiceUserRefusesReservedUser(t *testing.T) {
+	runner := newUserFileRunner()
+
+	if err := CreateServiceUser(runner, "www-data", nil); err == nil {
+		t.Fatal("expected reserved user error")
 	}
 }
 

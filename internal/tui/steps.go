@@ -134,8 +134,20 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 	switch step.id {
 	case runBootstrap:
 		return system.Bootstrap(runner, timezone)
-	case runAddUser:
-		return user.AddUser(runner, username, normalizeSSHKeyInput(m.sshKeyInput.Value()))
+	case runUserCreateLogin:
+		return user.CreateLoginUser(runner, username)
+	case runUserSSHKey:
+		return user.AddAuthorizedKey(runner, username, normalizeSSHKeyInput(m.sshKeyInput.Value()))
+	case runUserAllowSSH:
+		return user.AllowSSH(runner, username)
+	case runUserSudo:
+		return user.EnablePasswordlessSudo(runner, username)
+	case runUserLinger:
+		return user.EnableLinger(runner, username)
+	case runUserDockerGroup:
+		return user.AddGroup(runner, username, "docker")
+	case runServiceUser:
+		return user.CreateServiceUser(runner, username, nil)
 	case runFirewall:
 		return firewall.EnableBaseline(runner, true)
 	case runHTTP:

@@ -372,6 +372,130 @@ func TestRunAddUserRejectsKeyAndKeyFile(t *testing.T) {
 	}
 }
 
+func TestRunNestedUserCommands(t *testing.T) {
+	key := "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "create selected login user actions",
+			args: []string{"setup", "user", "create", "--user", "dev", "--key", key, "--allow-ssh", "--sudo", "--linger", "--group", "docker"},
+			want: "usermod -aG docker dev",
+		},
+		{
+			name: "service create",
+			args: []string{"setup", "user", "service", "create", "--user", "app", "--group", "www-data"},
+			want: "adduser --system --group --home /var/lib/app --shell /usr/sbin/nologin app",
+		},
+		{
+			name: "ssh key add",
+			args: []string{"setup", "user", "ssh", "key", "add", "--user", "dev", "--key", key},
+			want: "authorized_keys",
+		},
+		{
+			name: "ssh allow",
+			args: []string{"setup", "user", "ssh", "allow", "--user", "dev"},
+			want: "sshd -t",
+		},
+		{
+			name: "ssh deny",
+			args: []string{"setup", "user", "ssh", "deny", "--user", "dev"},
+			want: "WriteFile(/etc/ssh/sshd_config.d",
+		},
+		{
+			name: "sudo enable",
+			args: []string{"setup", "user", "sudo", "enable", "--user", "dev"},
+			want: "sudoers.d",
+		},
+		{
+			name: "sudo disable",
+			args: []string{"setup", "user", "sudo", "disable", "--user", "dev"},
+			want: "ReadFile(/etc/sudoers.d/dev)",
+		},
+		{
+			name: "linger enable",
+			args: []string{"setup", "user", "linger", "enable", "--user", "dev"},
+			want: "loginctl enable-linger dev",
+		},
+		{
+			name: "linger disable",
+			args: []string{"setup", "user", "linger", "disable", "--user", "dev"},
+			want: "loginctl disable-linger dev",
+		},
+		{
+			name: "group add",
+			args: []string{"setup", "user", "group", "add", "--user", "dev", "--group", "docker"},
+			want: "usermod -aG docker dev",
+		},
+		{
+			name: "group remove",
+			args: []string{"setup", "user", "group", "remove", "--user", "dev", "--group", "docker"},
+			want: "not in docker",
+		},
+		{
+			name: "disable",
+			args: []string{"setup", "user", "disable", "--user", "dev"},
+			want: "passwd -l dev",
+		},
+		{
+			name: "delete preserve home",
+			args: []string{"setup", "user", "delete", "--user", "dev"},
+			want: "deluser dev",
+		},
+		{
+			name: "delete remove home",
+			args: []string{"setup", "user", "delete", "--user", "dev", "--remove-home"},
+			want: "deluser --remove-home dev",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var dryBuf bytes.Buffer
+			dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+			setupexec.SetPrintWriter(&dryBuf)
+			defer setupexec.SetPrintWriter(io.Discard)
+
+			app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+			if err := app.Run(context.Background(), tt.args); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(dryBuf.String(), tt.want) {
+				t.Fatalf("expected %q in output:\n%s", tt.want, dryBuf.String())
+			}
+		})
+	}
+}
+
+func TestRunNestedUserCreateRejectsKeyAndKeyFile(t *testing.T) {
+	keyFile, err := os.CreateTemp(t.TempDir(), "key-*.pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keyFile.WriteString("ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo="); err != nil {
+		t.Fatal(err)
+	}
+	if err := keyFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	app := BuildApp(false, nil)
+	err = app.Run(context.Background(), []string{
+		"setup", "user", "create",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+		"--key-file", keyFile.Name(),
+	})
+	if err == nil {
+		t.Fatal("expected error for conflicting key inputs")
+	}
+	if !strings.Contains(err.Error(), "either --key or --key-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunUnknownCommand(t *testing.T) {
 	app := BuildApp(false, nil)
 

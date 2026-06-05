@@ -47,7 +47,13 @@ type stepStatusMsg struct {
 
 type selectionState struct {
 	Bootstrap         bool
-	AddUser           bool
+	UserCreateLogin   bool
+	UserCreateService bool
+	UserSSHKey        bool
+	UserAllowSSH      bool
+	UserSudo          bool
+	UserLinger        bool
+	UserDockerGroup   bool
 	FirewallBaseline  bool
 	FirewallHTTP      bool
 	FirewallHTTPS     bool
@@ -62,15 +68,20 @@ type selectionState struct {
 
 func defaultSelections() selectionState {
 	return selectionState{
-		Bootstrap: true,
-		AddUser:   true,
-		Tools:     tools.AllInstallOptions(),
-		DevTools:  devtools.DefaultInstallOptions(),
+		Bootstrap:       true,
+		UserCreateLogin: true,
+		UserSSHKey:      true,
+		UserAllowSSH:    true,
+		UserSudo:        true,
+		UserLinger:      true,
+		UserDockerGroup: true,
+		Tools:           tools.AllInstallOptions(),
+		DevTools:        devtools.DefaultInstallOptions(),
 	}
 }
 
 func (s selectionState) Any() bool {
-	return s.Bootstrap || s.AddUser || s.FirewallBaseline || s.FirewallHTTP ||
+	return s.Bootstrap || s.UserManagementAny() || s.FirewallBaseline || s.FirewallHTTP ||
 		s.FirewallHTTPS || s.FirewallMosh || s.Fail2Ban ||
 		s.DockerLogRotation || s.Diagnostics || s.UpdatesCheck ||
 		s.Tools.Any() || s.DevTools.Any()
@@ -81,42 +92,62 @@ func (s selectionState) NeedsTimezone() bool {
 }
 
 func (s selectionState) NeedsUsername() bool {
-	return s.AddUser || s.DevTools.Node || s.DevTools.Rust || s.DevTools.Pnpm
+	return s.UserManagementAny() || s.DevTools.Node || s.DevTools.Rust || s.DevTools.Pnpm
 }
 
 func (s selectionState) NeedsSSHKey() bool {
-	return s.AddUser
+	return s.UserSSHKey
+}
+
+func (s selectionState) UserLoginAny() bool {
+	return s.UserCreateLogin || s.UserSSHKey || s.UserAllowSSH || s.UserSudo || s.UserLinger || s.UserDockerGroup
+}
+
+func (s selectionState) UserLoginAll() bool {
+	return s.UserCreateLogin && s.UserSSHKey && s.UserAllowSSH && s.UserSudo && s.UserLinger && s.UserDockerGroup
+}
+
+func (s selectionState) UserManagementAny() bool {
+	return s.UserLoginAny() || s.UserCreateService
 }
 
 type planItemID string
 
 const (
-	itemBootstrap planItemID = "bootstrap"
-	itemAddUser   planItemID = "add-user"
-	itemManageAll planItemID = "manage-all"
-	itemFirewall  planItemID = "firewall"
-	itemHTTP      planItemID = "firewall-http"
-	itemHTTPS     planItemID = "firewall-https"
-	itemMosh      planItemID = "firewall-mosh"
-	itemFail2Ban  planItemID = "fail2ban"
-	itemDockerLog planItemID = "docker-log"
-	itemDoctor    planItemID = "doctor"
-	itemUpdates   planItemID = "updates"
-	itemCLIAll    planItemID = "cli-all"
-	itemRipgrep   planItemID = "ripgrep"
-	itemFd        planItemID = "fd"
-	itemBat       planItemID = "bat"
-	itemYq        planItemID = "yq"
-	itemGlow      planItemID = "glow"
-	itemGh        planItemID = "gh"
-	itemDevAll    planItemID = "dev-all"
-	itemGo        planItemID = "go"
-	itemNode      planItemID = "node"
-	itemRust      planItemID = "rust"
-	itemGoLint    planItemID = "go-lint"
-	itemGoRel     planItemID = "goreleaser"
-	itemGoVuln    planItemID = "govulncheck"
-	itemPnpm      planItemID = "pnpm"
+	itemBootstrap       planItemID = "bootstrap"
+	itemUserAll         planItemID = "user-all"
+	itemAddUser         planItemID = "add-user"
+	itemUserCreateLogin planItemID = "user-create-login"
+	itemUserSSHKey      planItemID = "user-ssh-key"
+	itemUserAllowSSH    planItemID = "user-allow-ssh"
+	itemUserSudo        planItemID = "user-sudo"
+	itemUserLinger      planItemID = "user-linger"
+	itemUserDockerGroup planItemID = "user-docker-group"
+	itemServiceUser     planItemID = "service-user"
+	itemManageAll       planItemID = "manage-all"
+	itemFirewall        planItemID = "firewall"
+	itemHTTP            planItemID = "firewall-http"
+	itemHTTPS           planItemID = "firewall-https"
+	itemMosh            planItemID = "firewall-mosh"
+	itemFail2Ban        planItemID = "fail2ban"
+	itemDockerLog       planItemID = "docker-log"
+	itemDoctor          planItemID = "doctor"
+	itemUpdates         planItemID = "updates"
+	itemCLIAll          planItemID = "cli-all"
+	itemRipgrep         planItemID = "ripgrep"
+	itemFd              planItemID = "fd"
+	itemBat             planItemID = "bat"
+	itemYq              planItemID = "yq"
+	itemGlow            planItemID = "glow"
+	itemGh              planItemID = "gh"
+	itemDevAll          planItemID = "dev-all"
+	itemGo              planItemID = "go"
+	itemNode            planItemID = "node"
+	itemRust            planItemID = "rust"
+	itemGoLint          planItemID = "go-lint"
+	itemGoRel           planItemID = "goreleaser"
+	itemGoVuln          planItemID = "govulncheck"
+	itemPnpm            planItemID = "pnpm"
 )
 
 type planItem struct {
@@ -140,25 +171,31 @@ func (p planItem) Description() string {
 type runStepID string
 
 const (
-	runBootstrap runStepID = "bootstrap"
-	runAddUser   runStepID = "add-user"
-	runFirewall  runStepID = "firewall"
-	runHTTP      runStepID = "firewall-http"
-	runHTTPS     runStepID = "firewall-https"
-	runMosh      runStepID = "firewall-mosh"
-	runFail2Ban  runStepID = "fail2ban"
-	runDockerLog runStepID = "docker-log"
-	runDoctor    runStepID = "doctor"
-	runUpdates   runStepID = "updates"
-	runToolDeps  runStepID = "tool-deps"
-	runTool      runStepID = "tool"
-	runGo        runStepID = "go"
-	runNode      runStepID = "node"
-	runRust      runStepID = "rust"
-	runGoLint    runStepID = "go-lint"
-	runGoRel     runStepID = "goreleaser"
-	runGoVuln    runStepID = "govulncheck"
-	runPnpm      runStepID = "pnpm"
+	runBootstrap       runStepID = "bootstrap"
+	runUserCreateLogin runStepID = "user-create-login"
+	runUserSSHKey      runStepID = "user-ssh-key"
+	runUserAllowSSH    runStepID = "user-allow-ssh"
+	runUserSudo        runStepID = "user-sudo"
+	runUserLinger      runStepID = "user-linger"
+	runUserDockerGroup runStepID = "user-docker-group"
+	runServiceUser     runStepID = "service-user"
+	runFirewall        runStepID = "firewall"
+	runHTTP            runStepID = "firewall-http"
+	runHTTPS           runStepID = "firewall-https"
+	runMosh            runStepID = "firewall-mosh"
+	runFail2Ban        runStepID = "fail2ban"
+	runDockerLog       runStepID = "docker-log"
+	runDoctor          runStepID = "doctor"
+	runUpdates         runStepID = "updates"
+	runToolDeps        runStepID = "tool-deps"
+	runTool            runStepID = "tool"
+	runGo              runStepID = "go"
+	runNode            runStepID = "node"
+	runRust            runStepID = "rust"
+	runGoLint          runStepID = "go-lint"
+	runGoRel           runStepID = "goreleaser"
+	runGoVuln          runStepID = "govulncheck"
+	runPnpm            runStepID = "pnpm"
 )
 
 type runStep struct {
@@ -359,10 +396,20 @@ func (m model) planItems() []list.Item {
 	devAll := m.selections.DevTools.Go && m.selections.DevTools.Node && m.selections.DevTools.Rust &&
 		m.selections.DevTools.GoLint && m.selections.DevTools.GoReleaser &&
 		m.selections.DevTools.GoVulnCheck && m.selections.DevTools.Pnpm
+	userAny := m.selections.UserManagementAny()
+	userAll := m.selections.UserLoginAll() && m.selections.UserCreateService
 
 	return []list.Item{
 		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt, base packages, SSH hardening, unattended upgrades, Docker"},
-		planItem{itemAddUser, checkbox(m.selections.AddUser, m.selections.AddUser) + " Add User", "Passwordless sudo, SSH key, linger, managed AllowUsers"},
+		planItem{itemUserAll, checkbox(userAll, userAny) + " User Management", "Login-user and setup-owned service-user workflows"},
+		planItem{itemAddUser, "  " + checkbox(m.selections.UserLoginAll(), m.selections.UserLoginAny()) + " Login User Workflow", "Create/reuse login user with the classic default access set"},
+		planItem{itemUserCreateLogin, "    " + checkbox(m.selections.UserCreateLogin, m.selections.UserCreateLogin) + " Create Login User", "Create or reuse the target login account"},
+		planItem{itemUserSSHKey, "    " + checkbox(m.selections.UserSSHKey, m.selections.UserSSHKey) + " Add SSH Key", "Append the provided public key to authorized_keys"},
+		planItem{itemUserAllowSSH, "    " + checkbox(m.selections.UserAllowSSH, m.selections.UserAllowSSH) + " Allow SSH Login", "Add the user to setup-managed AllowUsers"},
+		planItem{itemUserSudo, "    " + checkbox(m.selections.UserSudo, m.selections.UserSudo) + " Passwordless Sudo", "Write setup-managed /etc/sudoers.d/<user>"},
+		planItem{itemUserLinger, "    " + checkbox(m.selections.UserLinger, m.selections.UserLinger) + " Enable Linger", "Enable systemd user lingering"},
+		planItem{itemUserDockerGroup, "    " + checkbox(m.selections.UserDockerGroup, m.selections.UserDockerGroup) + " Docker Group", "Add the login user to the existing docker group"},
+		planItem{itemServiceUser, "  " + checkbox(m.selections.UserCreateService, m.selections.UserCreateService) + " Service User", "Create a setup-owned no-login system user under /var/lib/<user>"},
 		planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "UFW, common ports, fail2ban, Docker logs, diagnostics, updates"},
 		planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, preserve SSH access"},
 		planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Open tcp/80 through UFW"},
@@ -552,8 +599,18 @@ func (m model) selectedPlanCount() int {
 	if m.selections.Bootstrap {
 		count++
 	}
-	if m.selections.AddUser {
-		count++
+	for _, selected := range []bool{
+		m.selections.UserCreateLogin,
+		m.selections.UserSSHKey,
+		m.selections.UserAllowSSH,
+		m.selections.UserSudo,
+		m.selections.UserLinger,
+		m.selections.UserDockerGroup,
+		m.selections.UserCreateService,
+	} {
+		if selected {
+			count++
+		}
 	}
 	count += len(m.selections.Tools.SelectedTools())
 	if m.selections.FirewallBaseline {

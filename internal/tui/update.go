@@ -387,8 +387,54 @@ func (m *model) togglePlanItem(id planItemID) {
 	switch id {
 	case itemBootstrap:
 		m.selections.Bootstrap = !m.selections.Bootstrap
+	case itemUserAll:
+		if m.selections.UserManagementAny() {
+			m.selections.UserCreateLogin = false
+			m.selections.UserSSHKey = false
+			m.selections.UserAllowSSH = false
+			m.selections.UserSudo = false
+			m.selections.UserLinger = false
+			m.selections.UserDockerGroup = false
+			m.selections.UserCreateService = false
+		} else {
+			m.selections.UserCreateLogin = true
+			m.selections.UserSSHKey = true
+			m.selections.UserAllowSSH = true
+			m.selections.UserSudo = true
+			m.selections.UserLinger = true
+			m.selections.UserDockerGroup = true
+			m.selections.UserCreateService = true
+		}
 	case itemAddUser:
-		m.selections.AddUser = !m.selections.AddUser
+		if m.selections.UserLoginAll() {
+			m.selections.UserCreateLogin = false
+			m.selections.UserSSHKey = false
+			m.selections.UserAllowSSH = false
+			m.selections.UserSudo = false
+			m.selections.UserLinger = false
+			m.selections.UserDockerGroup = false
+		} else {
+			m.selections.UserCreateLogin = true
+			m.selections.UserSSHKey = true
+			m.selections.UserAllowSSH = true
+			m.selections.UserSudo = true
+			m.selections.UserLinger = true
+			m.selections.UserDockerGroup = true
+		}
+	case itemUserCreateLogin:
+		m.selections.UserCreateLogin = !m.selections.UserCreateLogin
+	case itemUserSSHKey:
+		m.selections.UserSSHKey = !m.selections.UserSSHKey
+	case itemUserAllowSSH:
+		m.selections.UserAllowSSH = !m.selections.UserAllowSSH
+	case itemUserSudo:
+		m.selections.UserSudo = !m.selections.UserSudo
+	case itemUserLinger:
+		m.selections.UserLinger = !m.selections.UserLinger
+	case itemUserDockerGroup:
+		m.selections.UserDockerGroup = !m.selections.UserDockerGroup
+	case itemServiceUser:
+		m.selections.UserCreateService = !m.selections.UserCreateService
 	case itemManageAll:
 		if m.selections.FirewallBaseline && m.selections.FirewallHTTP && m.selections.FirewallHTTPS &&
 			m.selections.FirewallMosh && m.selections.Fail2Ban && m.selections.DockerLogRotation &&
@@ -568,11 +614,53 @@ func (m model) buildRunSteps() []runStep {
 			desc: "Locale, packages, SSH hardening, unattended upgrades, Docker",
 		})
 	}
-	if m.selections.AddUser {
+	if m.selections.UserCreateLogin {
 		steps = append(steps, runStep{
-			id:   runAddUser,
-			name: "Add User",
-			desc: "Create sudo user, install SSH key, update AllowUsers",
+			id:   runUserCreateLogin,
+			name: "Create Login User",
+			desc: "Create or reuse the target login account",
+		})
+	}
+	if m.selections.UserSSHKey {
+		steps = append(steps, runStep{
+			id:   runUserSSHKey,
+			name: "Add SSH Key",
+			desc: "Append the provided public key to authorized_keys",
+		})
+	}
+	if m.selections.UserAllowSSH {
+		steps = append(steps, runStep{
+			id:   runUserAllowSSH,
+			name: "Allow SSH Login",
+			desc: "Add the user to setup-managed AllowUsers",
+		})
+	}
+	if m.selections.UserSudo {
+		steps = append(steps, runStep{
+			id:   runUserSudo,
+			name: "Enable Passwordless Sudo",
+			desc: "Write setup-managed sudoers file",
+		})
+	}
+	if m.selections.UserLinger {
+		steps = append(steps, runStep{
+			id:   runUserLinger,
+			name: "Enable User Linger",
+			desc: "Enable systemd user lingering",
+		})
+	}
+	if m.selections.UserDockerGroup {
+		steps = append(steps, runStep{
+			id:   runUserDockerGroup,
+			name: "Add Docker Group",
+			desc: "Add the user to the existing docker group",
+		})
+	}
+	if m.selections.UserCreateService {
+		steps = append(steps, runStep{
+			id:   runServiceUser,
+			name: "Create Service User",
+			desc: "Create setup-owned no-login system account under /var/lib",
 		})
 	}
 	if m.selections.FirewallBaseline {

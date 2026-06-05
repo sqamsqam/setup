@@ -49,6 +49,19 @@ func ValidateUsername(name string) error {
 	return nil
 }
 
+func validateGroupName(name string) error {
+	if name == "" {
+		return fmt.Errorf("group must not be empty")
+	}
+	if !usernameRe.MatchString(name) {
+		return fmt.Errorf("invalid group %q: must start with a lowercase letter or underscore, followed by letters, digits, hyphens, or underscores", name)
+	}
+	if len(name) > 32 {
+		return fmt.Errorf("group too long: %d characters (max 32)", len(name))
+	}
+	return nil
+}
+
 func ValidateSSHKey(key string) error {
 	key = strings.TrimSpace(key)
 	if key == "" {

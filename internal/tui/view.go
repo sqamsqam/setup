@@ -117,7 +117,7 @@ func (m model) inputKeyView() string {
 			body += dimStyle.Render(user.SSHKeySummary(pubkey))
 		}
 	}
-	return m.page("Add User", "Paste the public key that should be installed for the user.", body, []key.Binding{keys.Continue, keys.Back})
+	return m.page("SSH Key", "Paste the public key that should be installed for the user.", body, []key.Binding{keys.Continue, keys.Back})
 }
 
 func (m model) confirmView() string {
@@ -152,7 +152,7 @@ func (m model) confirmBody() string {
 		fmt.Fprintf(&body, "  SSH key: %s\n", user.SSHKeySummary(pubkey))
 	}
 
-	if m.selections.Bootstrap || m.selections.AddUser {
+	if m.selections.Bootstrap || m.selections.UserManagementAny() {
 		body.WriteString("\n")
 		body.WriteString(sectionStyle.Render("Access changes"))
 		body.WriteString("\n")
@@ -162,8 +162,23 @@ func (m model) confirmBody() string {
 	if m.selections.Bootstrap {
 		body.WriteString("  SSH hardening, root SSH disabled, root password locked.\n")
 	}
-	if m.selections.AddUser {
-		body.WriteString("  User receives passwordless sudo and managed SSH AllowUsers.\n")
+	if m.selections.UserSSHKey {
+		body.WriteString("  The SSH public key will be appended for the target user.\n")
+	}
+	if m.selections.UserAllowSSH {
+		body.WriteString("  The user will be added to the setup-managed SSH AllowUsers list.\n")
+	}
+	if m.selections.UserSudo {
+		body.WriteString("  Setup-managed passwordless sudo will be enabled for the user.\n")
+	}
+	if m.selections.UserLinger {
+		body.WriteString("  systemd user lingering will be enabled.\n")
+	}
+	if m.selections.UserDockerGroup {
+		body.WriteString("  The user will be added to the existing docker group.\n")
+	}
+	if m.selections.UserCreateService {
+		body.WriteString("  A setup-owned no-login service user will be created under /var/lib/<user>.\n")
 	}
 	if m.selections.FirewallBaseline {
 		body.WriteString("  UFW will allow the detected SSH port before enabling default-deny incoming rules.\n")
@@ -395,8 +410,26 @@ func (m model) planSummaryLines() []string {
 	if m.selections.Bootstrap {
 		lines = append(lines, "System Bootstrap")
 	}
-	if m.selections.AddUser {
-		lines = append(lines, "Add User")
+	if m.selections.UserCreateLogin {
+		lines = append(lines, "User Management: create login user")
+	}
+	if m.selections.UserSSHKey {
+		lines = append(lines, "User Management: add SSH key")
+	}
+	if m.selections.UserAllowSSH {
+		lines = append(lines, "User Management: allow SSH login")
+	}
+	if m.selections.UserSudo {
+		lines = append(lines, "User Management: passwordless sudo")
+	}
+	if m.selections.UserLinger {
+		lines = append(lines, "User Management: enable linger")
+	}
+	if m.selections.UserDockerGroup {
+		lines = append(lines, "User Management: docker group")
+	}
+	if m.selections.UserCreateService {
+		lines = append(lines, "User Management: create service user")
 	}
 	if m.selections.FirewallBaseline {
 		lines = append(lines, "Instance Management: UFW firewall baseline")

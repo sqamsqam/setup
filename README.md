@@ -27,6 +27,9 @@ sudo setup              # open the guided TUI
 sudo setup fresh --user dev --key-file ~/.ssh/id_ed25519.pub --timezone UTC
 sudo setup base --timezone UTC
 sudo setup user --user dev --key-file ~/.ssh/id_ed25519.pub
+sudo setup user create --user dev --key-file ~/.ssh/id_ed25519.pub --allow-ssh --sudo --linger --group docker
+sudo setup user ssh allow --user dev
+sudo setup user service create --user app --group www-data
 sudo setup tools
 sudo setup dev --user dev --all
 sudo setup check

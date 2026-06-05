@@ -24,11 +24,14 @@ func TestInitialModel(t *testing.T) {
 	if m.screen != screenMainMenu {
 		t.Errorf("expected screenMainMenu, got: %d", m.screen)
 	}
-	if !m.selections.Bootstrap || !m.selections.AddUser || !m.selections.Tools.Any() || !m.selections.DevTools.Any() {
+	if !m.selections.Bootstrap || !m.selections.UserLoginAll() || !m.selections.Tools.Any() || !m.selections.DevTools.Any() {
 		t.Fatalf("expected full default selection: %#v", m.selections)
 	}
-	if len(m.planItems()) != 26 {
-		t.Errorf("expected 26 plan items, got: %d", len(m.planItems()))
+	if m.selections.UserCreateService {
+		t.Fatal("service user should not be selected by default")
+	}
+	if len(m.planItems()) != 34 {
+		t.Errorf("expected 34 plan items, got: %d", len(m.planItems()))
 	}
 }
 
@@ -66,9 +69,14 @@ func TestSelectionRequirements(t *testing.T) {
 		t.Fatal("node should require username but not SSH key")
 	}
 
-	s = selectionState{AddUser: true}
+	s = selectionState{UserCreateLogin: true, UserSSHKey: true}
 	if !s.NeedsUsername() || !s.NeedsSSHKey() {
 		t.Fatal("add user should require username and SSH key")
+	}
+
+	s = selectionState{UserCreateService: true}
+	if !s.NeedsUsername() || s.NeedsSSHKey() {
+		t.Fatal("service user should require username but not SSH key")
 	}
 }
 
@@ -220,10 +228,10 @@ func TestBuildRunStepsDefault(t *testing.T) {
 	m := InitialModel(false)
 	steps := m.buildRunSteps()
 
-	if len(steps) != 11 {
-		t.Fatalf("expected 11 run steps, got %d", len(steps))
+	if len(steps) != 16 {
+		t.Fatalf("expected 16 run steps, got %d", len(steps))
 	}
-	if steps[0].id != runBootstrap || steps[1].id != runAddUser || steps[2].id != runToolDeps {
+	if steps[0].id != runBootstrap || steps[1].id != runUserCreateLogin || steps[2].id != runUserSSHKey {
 		t.Fatalf("unexpected leading steps: %#v", steps[:3])
 	}
 	if steps[len(steps)-2].id != runGo || steps[len(steps)-1].id != runNode {

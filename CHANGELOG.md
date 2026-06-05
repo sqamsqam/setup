@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- Modular user-management commands for selective login-user creation, SSH keys, SSH access, passwordless sudo, linger, existing group membership, disable, delete, and setup-owned service users.
+- TUI user-management selections for the default login-user workflow and setup-owned service-user creation.
+
+### Changed
+- Setup-managed SSH `AllowUsers` now tracks an explicit requested-user list instead of regenerating from every UID >= 1000 account.
+- Passwordless sudo disable now removes only setup-marked sudoers files and refuses unmanaged sudoers files.
+
 ## [0.8.8] - 2026-06-05
 
 ### Fixed

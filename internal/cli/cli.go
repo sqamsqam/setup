@@ -142,13 +142,12 @@ func bootstrapCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 func addUserCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 	return &cli.Command{
 		Name:  "user",
-		Usage: "Create a sudo user with SSH key auth",
+		Usage: "Manage login and setup-owned service users",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "user",
-				Aliases:  []string{"u"},
-				Usage:    "Username for the new account",
-				Required: true,
+				Name:    "user",
+				Aliases: []string{"u"},
+				Usage:   "Username for the compatibility login-user setup",
 			},
 			&cli.StringFlag{
 				Name:    "key",
@@ -160,25 +159,233 @@ func addUserCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Usage: "Path to a file containing the SSH public key (safer)",
 			},
 		},
+		Commands: userCommands(dryRun, demo, runnerFactory),
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 			username := cmd.String("user")
-			pubkey := cmd.String("key")
-			if keyFile := cmd.String("key-file"); keyFile != "" {
-				if pubkey != "" {
-					return fmt.Errorf("use either --key or --key-file, not both")
-				}
-				keyBytes, err := os.ReadFile(keyFile)
-				if err != nil {
-					return fmt.Errorf("reading key file %s: %w", keyFile, err)
-				}
-				pubkey = strings.TrimSpace(string(keyBytes))
+			if username == "" {
+				return fmt.Errorf("missing required flag: --user")
 			}
-			if pubkey == "" {
-				return fmt.Errorf("either --key or --key-file is required")
+			pubkey, err := keyFromFlags(cmd, true)
+			if err != nil {
+				return err
 			}
 			return user.AddUser(commandRunner(cmd, dryRun, demo, runnerFactory), username, pubkey)
 		}),
 	}
+}
+
+func userCommands(dryRun, demo bool, runnerFactory RunnerFactory) []*cli.Command {
+	userFlag := func() cli.Flag {
+		return &cli.StringFlag{Name: "user", Aliases: []string{"u"}, Usage: "Target username", Required: true}
+	}
+	groupFlag := func() cli.Flag {
+		return &cli.StringFlag{Name: "group", Usage: "Existing group name"}
+	}
+	groupsFlag := func() cli.Flag {
+		return &cli.StringSliceFlag{Name: "group", Usage: "Existing group name; may be repeated"}
+	}
+	keyFlag := func() cli.Flag {
+		return &cli.StringFlag{Name: "key", Aliases: []string{"k"}, Usage: "SSH public key content (visible in process list)"}
+	}
+	keyFileFlag := func() cli.Flag {
+		return &cli.StringFlag{Name: "key-file", Usage: "Path to a file containing the SSH public key (safer)"}
+	}
+
+	return []*cli.Command{
+		{
+			Name:  "create",
+			Usage: "Create or reuse a login user and apply selected access actions",
+			Flags: []cli.Flag{
+				userFlag(),
+				keyFlag(),
+				keyFileFlag(),
+				&cli.BoolFlag{Name: "allow-ssh", Usage: "Add the user to setup-managed SSH AllowUsers"},
+				&cli.BoolFlag{Name: "sudo", Usage: "Enable setup-managed passwordless sudo"},
+				&cli.BoolFlag{Name: "linger", Usage: "Enable systemd user lingering"},
+				groupsFlag(),
+			},
+			Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+				pubkey, err := keyFromFlags(cmd, false)
+				if err != nil {
+					return err
+				}
+				return user.CreateLoginUserSelected(
+					commandRunner(cmd, dryRun, demo, runnerFactory),
+					cmd.String("user"),
+					pubkey,
+					cmd.Bool("allow-ssh"),
+					cmd.Bool("sudo"),
+					cmd.Bool("linger"),
+					cmd.StringSlice("group"),
+				)
+			}),
+		},
+		{
+			Name:  "service",
+			Usage: "Manage setup-owned no-login service users",
+			Commands: []*cli.Command{
+				{
+					Name:  "create",
+					Usage: "Create a setup-owned system no-login user under /var/lib/<user>",
+					Flags: []cli.Flag{userFlag(), groupsFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.CreateServiceUser(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.StringSlice("group"))
+					}),
+				},
+			},
+		},
+		{
+			Name:  "ssh",
+			Usage: "Manage setup-owned SSH key and AllowUsers access",
+			Commands: []*cli.Command{
+				{
+					Name:  "key",
+					Usage: "Manage authorized SSH keys",
+					Commands: []*cli.Command{
+						{
+							Name:  "add",
+							Usage: "Add an authorized SSH public key idempotently",
+							Flags: []cli.Flag{userFlag(), keyFlag(), keyFileFlag()},
+							Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+								pubkey, err := keyFromFlags(cmd, true)
+								if err != nil {
+									return err
+								}
+								return user.AddAuthorizedKey(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), pubkey)
+							}),
+						},
+					},
+				},
+				{
+					Name:  "allow",
+					Usage: "Add the user to setup-managed SSH AllowUsers",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.AllowSSH(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+				{
+					Name:  "deny",
+					Usage: "Remove the user from setup-managed SSH AllowUsers",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.DenySSH(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+			},
+		},
+		{
+			Name:  "sudo",
+			Usage: "Manage setup-owned passwordless sudo",
+			Commands: []*cli.Command{
+				{
+					Name:  "enable",
+					Usage: "Enable setup-managed passwordless sudo",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.EnablePasswordlessSudo(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+				{
+					Name:  "disable",
+					Usage: "Remove setup-managed passwordless sudo",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.DisablePasswordlessSudo(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+			},
+		},
+		{
+			Name:  "linger",
+			Usage: "Manage systemd user lingering",
+			Commands: []*cli.Command{
+				{
+					Name:  "enable",
+					Usage: "Enable lingering",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.EnableLinger(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+				{
+					Name:  "disable",
+					Usage: "Disable lingering",
+					Flags: []cli.Flag{userFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						return user.DisableLinger(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					}),
+				},
+			},
+		},
+		{
+			Name:  "group",
+			Usage: "Manage membership in existing groups",
+			Commands: []*cli.Command{
+				{
+					Name:  "add",
+					Usage: "Add the user to an existing group",
+					Flags: []cli.Flag{userFlag(), groupFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						group := cmd.String("group")
+						if group == "" {
+							return fmt.Errorf("missing required flag: --group")
+						}
+						return user.AddGroup(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), group)
+					}),
+				},
+				{
+					Name:  "remove",
+					Usage: "Remove the user from an existing group",
+					Flags: []cli.Flag{userFlag(), groupFlag()},
+					Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+						group := cmd.String("group")
+						if group == "" {
+							return fmt.Errorf("missing required flag: --group")
+						}
+						return user.RemoveGroup(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), group)
+					}),
+				},
+			},
+		},
+		{
+			Name:  "disable",
+			Usage: "Lock access without deleting user data",
+			Flags: []cli.Flag{userFlag()},
+			Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+				return user.DisableUser(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+			}),
+		},
+		{
+			Name:  "delete",
+			Usage: "Delete an account after disabling access",
+			Flags: []cli.Flag{
+				userFlag(),
+				&cli.BoolFlag{Name: "remove-home", Usage: "Also remove the user's home directory"},
+			},
+			Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+				return user.DeleteUser(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.Bool("remove-home"))
+			}),
+		},
+	}
+}
+
+func keyFromFlags(cmd *cli.Command, required bool) (string, error) {
+	pubkey := cmd.String("key")
+	if keyFile := cmd.String("key-file"); keyFile != "" {
+		if pubkey != "" {
+			return "", fmt.Errorf("use either --key or --key-file, not both")
+		}
+		keyBytes, err := os.ReadFile(keyFile)
+		if err != nil {
+			return "", fmt.Errorf("reading key file %s: %w", keyFile, err)
+		}
+		pubkey = strings.TrimSpace(string(keyBytes))
+	}
+	if required && pubkey == "" {
+		return "", fmt.Errorf("either --key or --key-file is required")
+	}
+	return strings.TrimSpace(pubkey), nil
 }
 
 func installToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
