@@ -15,7 +15,7 @@ Enter
 Show
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Fresh Ubuntu Instance Setup/
+Wait+Screen /Setup Admin Console/
 Sleep 700ms
 Screenshot "docs/assets/screenshots/home.png"
 Sleep 500ms

@@ -3,12 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- Top-level group administration commands for create, delete, list, add-user, and remove-user workflows.
+- TUI admin-console home menu with focused areas for fresh setup, users, groups, services, instance maintenance, tools, dev tools, and diagnostics.
 - Modular user-management commands for selective login-user creation, SSH keys, SSH access, passwordless sudo, linger, existing group membership, disable, delete, and setup-owned service users.
 - TUI user-management selections for the default login-user workflow and setup-owned service-user creation.
 - Managed service lifecycle commands and TUI actions for create, status, logs, restart, list, disable, and remove.
 - TUI coverage for CLI-only instance administration helpers including UFW status/list/delete/reset, fail2ban status/unban, Docker disk/prune, update status actions, reboot, and configurable firewall/fail2ban/Docker options.
 
 ### Changed
+- The TUI now starts with no selected actions and requires choosing a focused admin area before reviewing a plan.
 - Setup-managed SSH `AllowUsers` now tracks an explicit requested-user list instead of regenerating from every UID >= 1000 account.
 - Passwordless sudo disable now removes only setup-marked sudoers files and refuses unmanaged sudoers files.
 - Firewall rule deletion, firewall reset, and Docker prune now require `--yes`.

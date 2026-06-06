@@ -8,16 +8,18 @@
 sudo setup
 ```
 
-The TUI lets you pick the work to run before anything changes:
+The TUI opens as an admin console with no selected actions. Choose an area, select the work for that area, then review the full plan before anything changes:
 
-- Base system setup: locale, package updates, timezone, unattended upgrades, SSH hardening, and Docker.
-- User management: login-user creation, SSH keys, SSH access, passwordless sudo, linger, Docker group membership, and setup-owned service users.
-- Managed services: create, inspect, restart, list, disable, and remove setup-owned per-user systemd services.
-- Instance care: UFW rules/status, fail2ban, Docker log rotation/disk/prune, diagnostics, updates, and reboot actions.
-- CLI tools: ripgrep, fd, bat, yq, glow, and gh.
-- Development tools: Go, Node.js, Rust, golangci-lint, GoReleaser, govulncheck, and pnpm.
+- Fresh setup: locale, package updates, timezone, unattended upgrades, SSH hardening, and Docker.
+- Users: login-user creation, SSH keys, SSH access, passwordless sudo, linger, Docker group membership, access lock/delete, and setup-owned service users.
+- Groups: create, delete, list, add users to groups, and remove users from groups.
+- Services: create, inspect, restart, list, disable, and remove setup-owned per-user systemd services.
+- Instance: UFW rules/status, fail2ban, Docker log rotation/disk/prune, updates, and reboot actions.
+- Tools: ripgrep, fd, bat, yq, glow, and gh.
+- Dev tools: Go, Node.js, Rust, golangci-lint, GoReleaser, govulncheck, and pnpm.
+- Diagnostics: read-only instance checks.
 
-Use arrow keys to move, Space to toggle, `/` to filter, Enter to continue, and Esc to go back.
+Use arrow keys to move, Enter to open an area, Space to toggle actions, `/` to filter, Enter to continue from an area, and Esc to go back.
 
 ## CLI Reference
 
@@ -65,6 +67,16 @@ sudo setup user delete --user dev --remove-home
 
 # Setup-owned service users are system no-login accounts under /var/lib/<user>.
 sudo setup user service create --user app --group www-data
+```
+
+Group management:
+
+```bash
+sudo setup group create --group app
+sudo setup group list
+sudo setup group user add --user dev --group app
+sudo setup group user remove --user dev --group app
+sudo setup group delete --group app --yes
 ```
 
 Instance helpers:
@@ -131,7 +143,8 @@ Visual demos must use `--demo` so they stay deterministic and safe.
 - Passwordless sudo is managed only through setup-owned `/etc/sudoers.d/<user>` files. Disable refuses to remove unmanaged sudoers files.
 - Setup-owned admin files, including SSH hardening, unattended-upgrades, fail2ban, and managed user-service units, refuse to replace unmanaged existing files.
 - Destructive or service-stopping admin commands such as firewall rule deletion, firewall reset, Docker prune, service disable, and service remove require `--yes`.
-- Group commands require the group to already exist; they do not create groups implicitly.
+- User group-membership commands require the group to already exist; they do not create groups implicitly.
+- Top-level group deletion requires `--yes` and refuses to delete a group that is a primary group for an existing user.
 - Service users are setup-owned no-login system accounts with homes under `/var/lib/<user>`. They are not modifications to distro-owned accounts such as `root`, `www-data`, `sshd`, or `nobody`.
 - `setup user disable` locks access and removes setup-managed SSH, linger, and sudo access without deleting data. `setup user delete --remove-home` is required for irreversible home removal.
 - Managed files are clearly marked and compared before replacement where practical.

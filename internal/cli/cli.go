@@ -13,6 +13,7 @@ import (
 	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/firewall"
+	sysgroup "github.com/sqamsqam/setup/internal/group"
 	"github.com/sqamsqam/setup/internal/security"
 	"github.com/sqamsqam/setup/internal/service"
 	"github.com/sqamsqam/setup/internal/system"
@@ -69,6 +70,7 @@ func BuildAppWithMode(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Comma
 			dockerCmd(dryRun, demo, runnerFactory),
 			updatesCmd(dryRun, demo, runnerFactory),
 			serviceCmd(dryRun, demo, runnerFactory),
+			groupCmd(dryRun, demo, runnerFactory),
 			fullCmd(dryRun, demo, runnerFactory),
 			versionCmd(),
 		},
@@ -386,6 +388,82 @@ func keyFromFlags(cmd *cli.Command, required bool) (string, error) {
 		return "", fmt.Errorf("either --key or --key-file is required")
 	}
 	return strings.TrimSpace(pubkey), nil
+}
+
+func groupCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
+	groupFlag := func(required bool) cli.Flag {
+		return &cli.StringFlag{Name: "group", Usage: "Group name", Required: required}
+	}
+	userFlag := func() cli.Flag {
+		return &cli.StringFlag{Name: "user", Aliases: []string{"u"}, Usage: "Target username", Required: true}
+	}
+
+	return &cli.Command{
+		Name:  "group",
+		Usage: "Manage system groups and group membership",
+		Commands: []*cli.Command{
+			{
+				Name:  "create",
+				Usage: "Create a system group if needed",
+				Flags: []cli.Flag{groupFlag(true)},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return sysgroup.Create(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("group"))
+				}),
+			},
+			{
+				Name:  "delete",
+				Usage: "Delete a system group after safety checks",
+				Flags: []cli.Flag{
+					groupFlag(true),
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm group deletion"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("group delete requires --yes")
+					}
+					return sysgroup.Delete(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("group"))
+				}),
+			},
+			{
+				Name:  "list",
+				Usage: "List system groups",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					groups, err := sysgroup.List(commandRunner(cmd, dryRun, demo, runnerFactory))
+					if err != nil {
+						return err
+					}
+					if len(groups) == 0 {
+						fmt.Println("No groups found.")
+						return nil
+					}
+					fmt.Println(strings.Join(groups, "\n"))
+					return nil
+				}),
+			},
+			{
+				Name:  "user",
+				Usage: "Manage user membership in groups",
+				Commands: []*cli.Command{
+					{
+						Name:  "add",
+						Usage: "Add a user to an existing group",
+						Flags: []cli.Flag{userFlag(), groupFlag(true)},
+						Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+							return sysgroup.AddUser(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("group"))
+						}),
+					},
+					{
+						Name:  "remove",
+						Usage: "Remove a user from a group",
+						Flags: []cli.Flag{userFlag(), groupFlag(true)},
+						Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+							return sysgroup.RemoveUser(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"), cmd.String("group"))
+						}),
+					},
+				},
+			},
+		},
+	}
 }
 
 func installToolsCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {

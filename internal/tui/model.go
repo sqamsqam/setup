@@ -21,9 +21,11 @@ import (
 type screen int
 
 const (
-	screenMainMenu screen = iota
+	screenHome screen = iota
+	screenMainMenu
 	screenInputTimezone
 	screenInputUser
+	screenInputGroupName
 	screenInputServiceUserGroups
 	screenInputServiceName
 	screenInputServiceWorkDir
@@ -62,10 +64,20 @@ type selectionState struct {
 	UserCreateService bool
 	UserSSHKey        bool
 	UserAllowSSH      bool
+	UserDenySSH       bool
 	UserSudo          bool
+	UserSudoDisable   bool
 	UserLinger        bool
+	UserLingerDisable bool
 	UserDockerGroup   bool
 	UserServiceGroups bool
+	UserDisable       bool
+	UserDelete        bool
+	GroupCreate       bool
+	GroupDelete       bool
+	GroupList         bool
+	GroupAddUser      bool
+	GroupRemoveUser   bool
 	ServiceCreate     bool
 	ServiceStatus     bool
 	ServiceLogs       bool
@@ -114,7 +126,7 @@ func defaultSelections() selectionState {
 }
 
 func (s selectionState) Any() bool {
-	return s.Bootstrap || s.UserManagementAny() || s.InstanceManagementAny() ||
+	return s.Bootstrap || s.UserManagementAny() || s.GroupAny() || s.InstanceManagementAny() ||
 		s.ServiceAny() || s.Tools.Any() || s.DevTools.Any()
 }
 
@@ -123,11 +135,16 @@ func (s selectionState) NeedsTimezone() bool {
 }
 
 func (s selectionState) NeedsUsername() bool {
-	return s.UserManagementAny() || s.ServiceAny() || s.DevTools.Node || s.DevTools.Rust || s.DevTools.Pnpm
+	return s.UserManagementAny() || s.GroupAddUser || s.GroupRemoveUser || s.ServiceAny() ||
+		s.DevTools.Node || s.DevTools.Rust || s.DevTools.Pnpm
 }
 
 func (s selectionState) NeedsSSHKey() bool {
 	return s.UserSSHKey
+}
+
+func (s selectionState) NeedsGroupName() bool {
+	return s.GroupCreate || s.GroupDelete || s.GroupAddUser || s.GroupRemoveUser
 }
 
 func (s selectionState) NeedsServiceUserGroups() bool {
@@ -175,7 +192,9 @@ func (s selectionState) NeedsGuardIP() bool {
 }
 
 func (s selectionState) UserLoginAny() bool {
-	return s.UserCreateLogin || s.UserSSHKey || s.UserAllowSSH || s.UserSudo || s.UserLinger || s.UserDockerGroup
+	return s.UserCreateLogin || s.UserSSHKey || s.UserAllowSSH || s.UserDenySSH ||
+		s.UserSudo || s.UserSudoDisable || s.UserLinger || s.UserLingerDisable ||
+		s.UserDockerGroup || s.UserDisable || s.UserDelete
 }
 
 func (s selectionState) UserLoginAll() bool {
@@ -184,6 +203,45 @@ func (s selectionState) UserLoginAll() bool {
 
 func (s selectionState) UserManagementAny() bool {
 	return s.UserLoginAny() || s.UserCreateService
+}
+
+func (s selectionState) GroupAny() bool {
+	return s.GroupCreate || s.GroupDelete || s.GroupList || s.GroupAddUser || s.GroupRemoveUser
+}
+
+func (s selectionState) GroupAll() bool {
+	return s.GroupCreate && s.GroupDelete && s.GroupList && s.GroupAddUser && s.GroupRemoveUser
+}
+
+type planArea int
+
+const (
+	areaFreshSetup planArea = iota
+	areaUsers
+	areaGroups
+	areaServices
+	areaInstance
+	areaTools
+	areaDevTools
+	areaDiagnostics
+)
+
+type homeItem struct {
+	area  planArea
+	title string
+	desc  string
+}
+
+func (h homeItem) FilterValue() string {
+	return h.title + " " + h.desc
+}
+
+func (h homeItem) Title() string {
+	return h.title
+}
+
+func (h homeItem) Description() string {
+	return h.desc
 }
 
 func (s selectionState) ServiceAny() bool {
@@ -221,11 +279,22 @@ const (
 	itemUserCreateLogin planItemID = "user-create-login"
 	itemUserSSHKey      planItemID = "user-ssh-key"
 	itemUserAllowSSH    planItemID = "user-allow-ssh"
+	itemUserDenySSH     planItemID = "user-deny-ssh"
 	itemUserSudo        planItemID = "user-sudo"
+	itemUserSudoDisable planItemID = "user-sudo-disable"
 	itemUserLinger      planItemID = "user-linger"
+	itemUserLingerDis   planItemID = "user-linger-disable"
 	itemUserDockerGroup planItemID = "user-docker-group"
+	itemUserDisable     planItemID = "user-disable"
+	itemUserDelete      planItemID = "user-delete"
 	itemServiceUser     planItemID = "service-user"
 	itemServiceGroups   planItemID = "service-user-groups"
+	itemGroupAll        planItemID = "group-all"
+	itemGroupCreate     planItemID = "group-create"
+	itemGroupDelete     planItemID = "group-delete"
+	itemGroupList       planItemID = "group-list"
+	itemGroupAddUser    planItemID = "group-add-user"
+	itemGroupRemoveUser planItemID = "group-remove-user"
 	itemServiceAll      planItemID = "service-all"
 	itemServiceCreate   planItemID = "service-create"
 	itemServiceStatus   planItemID = "service-status"
@@ -299,10 +368,20 @@ const (
 	runUserCreateLogin runStepID = "user-create-login"
 	runUserSSHKey      runStepID = "user-ssh-key"
 	runUserAllowSSH    runStepID = "user-allow-ssh"
+	runUserDenySSH     runStepID = "user-deny-ssh"
 	runUserSudo        runStepID = "user-sudo"
+	runUserSudoDisable runStepID = "user-sudo-disable"
 	runUserLinger      runStepID = "user-linger"
+	runUserLingerDis   runStepID = "user-linger-disable"
 	runUserDockerGroup runStepID = "user-docker-group"
+	runUserDisable     runStepID = "user-disable"
+	runUserDelete      runStepID = "user-delete"
 	runServiceUser     runStepID = "service-user"
+	runGroupCreate     runStepID = "group-create"
+	runGroupDelete     runStepID = "group-delete"
+	runGroupList       runStepID = "group-list"
+	runGroupAddUser    runStepID = "group-add-user"
+	runGroupRemoveUser runStepID = "group-remove-user"
 	runServiceCreate   runStepID = "service-create"
 	runServiceStatus   runStepID = "service-status"
 	runServiceLogs     runStepID = "service-logs"
@@ -403,9 +482,12 @@ type model struct {
 	planErr    string
 	inputErr   string
 
+	currentArea        planArea
+	homeList           list.Model
 	planList           list.Model
 	help               help.Model
 	usernameInput      textinput.Model
+	groupNameInput     textinput.Model
 	serviceGroupsInput textinput.Model
 	serviceNameInput   textinput.Model
 	serviceWorkDir     textinput.Model
@@ -452,7 +534,7 @@ func InitialModel(dryRun bool) model {
 func InitialModelWithMode(dryRun, demo bool) model {
 	m := model{
 		screen:          screenMainMenu,
-		selections:      defaultSelections(),
+		currentArea:     areaFreshSetup,
 		dryRun:          dryRun,
 		demo:            demo,
 		help:            help.New(),
@@ -472,7 +554,9 @@ func InitialModelWithMode(dryRun, demo bool) model {
 	m.output.SoftWrap = false
 	m.output.FillHeight = true
 	m.initInputs()
+	m.homeList = m.newHomeList()
 	m.planList = m.newPlanList()
+	m.screen = screenHome
 	return m
 }
 
@@ -483,12 +567,16 @@ func (m model) Init() tea.Cmd {
 func (m model) View() tea.View {
 	var content string
 	switch m.screen {
+	case screenHome:
+		content = m.homeView()
 	case screenMainMenu:
 		content = m.mainMenuView()
 	case screenInputTimezone:
 		content = m.inputTimezoneView()
 	case screenInputUser:
 		content = m.inputUserView()
+	case screenInputGroupName:
+		content = m.inputGroupNameView()
 	case screenInputServiceUserGroups:
 		content = m.inputServiceUserGroupsView()
 	case screenInputServiceName:
@@ -537,6 +625,12 @@ func (m *model) initInputs() {
 	m.usernameInput.Placeholder = "dev"
 	m.usernameInput.CharLimit = 32
 	m.usernameInput.SetWidth(48)
+
+	m.groupNameInput = textinput.New()
+	m.groupNameInput.Prompt = ""
+	m.groupNameInput.Placeholder = "app"
+	m.groupNameInput.CharLimit = 32
+	m.groupNameInput.SetWidth(48)
 
 	m.serviceGroupsInput = textinput.New()
 	m.serviceGroupsInput.Prompt = ""
@@ -649,20 +743,173 @@ func (m *model) initInputs() {
 }
 
 func (m model) newPlanList() list.Model {
-	l := list.New(m.planItems(), planDelegate{}, 80, 18)
-	l.Title = "Provisioning plan"
+	l := list.New(m.planItems(m.currentArea), planDelegate{}, 80, 18)
+	l.Title = areaTitle(m.currentArea)
 	l.SetStatusBarItemName("step", "steps")
 	l.DisableQuitKeybindings()
 	l.AdditionalShortHelpKeys = func() []key.Binding {
-		return []key.Binding{keys.Toggle, keys.Continue, keys.Quit}
+		return []key.Binding{keys.Toggle, keys.Continue, keys.Back, keys.Quit}
 	}
 	l.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{keys.Toggle, keys.Continue, keys.Quit}
+		return []key.Binding{keys.Toggle, keys.Continue, keys.Back, keys.Quit}
 	}
 	return l
 }
 
-func (m model) planItems() []list.Item {
+func (m model) newHomeList() list.Model {
+	l := list.New(m.homeItems(), homeDelegate{}, 80, 12)
+	l.Title = "Admin console"
+	l.SetStatusBarItemName("area", "areas")
+	l.DisableQuitKeybindings()
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Select, keys.Quit}
+	}
+	l.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{keys.Select, keys.Quit}
+	}
+	return l
+}
+
+func (m model) homeItems() []list.Item {
+	return []list.Item{
+		homeItem{areaFreshSetup, "Fresh Setup", m.homeDescription(areaFreshSetup, "Bootstrap a new Ubuntu LXC container")},
+		homeItem{areaUsers, "Users", m.homeDescription(areaUsers, "Create users and manage SSH, sudo, linger, and access locks")},
+		homeItem{areaGroups, "Groups", m.homeDescription(areaGroups, "Create, delete, list, and manage user memberships")},
+		homeItem{areaServices, "Services", m.homeDescription(areaServices, "Create and operate setup-managed user services")},
+		homeItem{areaInstance, "Instance", m.homeDescription(areaInstance, "Network, fail2ban, Docker maintenance, updates, and reboot")},
+		homeItem{areaTools, "Tools", m.homeDescription(areaTools, "Install CLI tools")},
+		homeItem{areaDevTools, "Dev Tools", m.homeDescription(areaDevTools, "Install language runtimes and development tooling")},
+		homeItem{areaDiagnostics, "Diagnostics", m.homeDescription(areaDiagnostics, "Run read-only instance checks")},
+	}
+}
+
+func (m model) homeDescription(area planArea, desc string) string {
+	count := m.selectedAreaCount(area)
+	if count == 0 {
+		return desc
+	}
+	return fmt.Sprintf("%s (%d selected)", desc, count)
+}
+
+func areaTitle(area planArea) string {
+	switch area {
+	case areaFreshSetup:
+		return "Fresh Setup"
+	case areaUsers:
+		return "Users"
+	case areaGroups:
+		return "Groups"
+	case areaServices:
+		return "Services"
+	case areaInstance:
+		return "Instance"
+	case areaTools:
+		return "Tools"
+	case areaDevTools:
+		return "Dev Tools"
+	case areaDiagnostics:
+		return "Diagnostics"
+	default:
+		return "Actions"
+	}
+}
+
+func areaSubtitle(area planArea) string {
+	switch area {
+	case areaFreshSetup:
+		return "Bootstrap only what this container needs."
+	case areaUsers:
+		return "Manage accounts and access without deleting data by surprise."
+	case areaGroups:
+		return "Manage system groups and existing-user memberships."
+	case areaServices:
+		return "Operate setup-managed per-user systemd services."
+	case areaInstance:
+		return "Handle network, security, container, and update maintenance."
+	case areaTools:
+		return "Install or update everyday CLI tools."
+	case areaDevTools:
+		return "Install language runtimes and development tooling."
+	case areaDiagnostics:
+		return "Run read-only checks and review the output."
+	default:
+		return "Choose actions, then review before anything runs."
+	}
+}
+
+func (m model) selectedAreaCount(area planArea) int {
+	switch area {
+	case areaFreshSetup:
+		if m.selections.Bootstrap {
+			return 1
+		}
+	case areaUsers:
+		return boolCount(
+			m.selections.UserCreateLogin,
+			m.selections.UserSSHKey,
+			m.selections.UserAllowSSH,
+			m.selections.UserDenySSH,
+			m.selections.UserSudo,
+			m.selections.UserSudoDisable,
+			m.selections.UserLinger,
+			m.selections.UserLingerDisable,
+			m.selections.UserDockerGroup,
+			m.selections.UserCreateService,
+			m.selections.UserServiceGroups,
+			m.selections.UserDisable,
+			m.selections.UserDelete,
+		)
+	case areaGroups:
+		return boolCount(m.selections.GroupCreate, m.selections.GroupDelete, m.selections.GroupList, m.selections.GroupAddUser, m.selections.GroupRemoveUser)
+	case areaServices:
+		return boolCount(m.selections.ServiceCreate, m.selections.ServiceStatus, m.selections.ServiceLogs, m.selections.ServiceRestart, m.selections.ServiceList, m.selections.ServiceDisable, m.selections.ServiceRemove)
+	case areaInstance:
+		return boolCount(
+			m.selections.FirewallBaseline,
+			m.selections.FirewallHTTP,
+			m.selections.FirewallHTTPS,
+			m.selections.FirewallMosh,
+			m.selections.FirewallCustom,
+			m.selections.NetworkStatus,
+			m.selections.NetworkList,
+			m.selections.NetworkDelete,
+			m.selections.NetworkReset,
+			m.selections.Fail2Ban,
+			m.selections.Fail2BanStatus,
+			m.selections.Fail2BanUnban,
+			m.selections.DockerLogRotation,
+			m.selections.ContainersDisk,
+			m.selections.ContainersPrune,
+			m.selections.UpdatesCheck,
+			m.selections.UpdatesUpgrade,
+			m.selections.UpdatesRebootNeed,
+			m.selections.UpdatesUnattended,
+			m.selections.UpdatesFailed,
+			m.selections.UpdatesReboot,
+		)
+	case areaTools:
+		return len(m.selections.Tools.SelectedTools())
+	case areaDevTools:
+		return boolCount(m.selections.DevTools.Go, m.selections.DevTools.Node, m.selections.DevTools.Rust, m.selections.DevTools.GoLint, m.selections.DevTools.GoReleaser, m.selections.DevTools.GoVulnCheck, m.selections.DevTools.Pnpm)
+	case areaDiagnostics:
+		if m.selections.Diagnostics {
+			return 1
+		}
+	}
+	return 0
+}
+
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
+}
+
+func (m model) planItems(area planArea) []list.Item {
 	cliAll := m.selections.Tools.Ripgrep && m.selections.Tools.Fd && m.selections.Tools.Bat &&
 		m.selections.Tools.Yq && m.selections.Tools.Glow && m.selections.Tools.Gh
 	manageAny := m.selections.InstanceManagementAny()
@@ -675,65 +922,100 @@ func (m model) planItems() []list.Item {
 	serviceAny := m.selections.ServiceAny()
 	serviceAll := m.selections.ServiceAll()
 
-	return []list.Item{
-		planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt, base packages, SSH hardening, unattended upgrades, Docker"},
-		planItem{itemUserAll, checkbox(userAll, userAny) + " User Management", "Login-user and setup-owned service-user workflows"},
-		planItem{itemAddUser, "  " + checkbox(m.selections.UserLoginAll(), m.selections.UserLoginAny()) + " Login User Workflow", "Create/reuse login user with the classic default access set"},
-		planItem{itemUserCreateLogin, "    " + checkbox(m.selections.UserCreateLogin, m.selections.UserCreateLogin) + " Create Login User", "Create or reuse the target login account"},
-		planItem{itemUserSSHKey, "    " + checkbox(m.selections.UserSSHKey, m.selections.UserSSHKey) + " Add SSH Key", "Append the provided public key to authorized_keys"},
-		planItem{itemUserAllowSSH, "    " + checkbox(m.selections.UserAllowSSH, m.selections.UserAllowSSH) + " Allow SSH Login", "Add the user to setup-managed AllowUsers"},
-		planItem{itemUserSudo, "    " + checkbox(m.selections.UserSudo, m.selections.UserSudo) + " Passwordless Sudo", "Write setup-managed /etc/sudoers.d/<user>"},
-		planItem{itemUserLinger, "    " + checkbox(m.selections.UserLinger, m.selections.UserLinger) + " Enable Linger", "Enable systemd user lingering"},
-		planItem{itemUserDockerGroup, "    " + checkbox(m.selections.UserDockerGroup, m.selections.UserDockerGroup) + " Docker Group", "Add the login user to the existing docker group"},
-		planItem{itemServiceUser, "  " + checkbox(m.selections.UserCreateService, m.selections.UserCreateService) + " Service User", "Create a setup-owned no-login system user under /var/lib/<user>"},
-		planItem{itemServiceGroups, "    " + checkbox(m.selections.UserServiceGroups, m.selections.UserServiceGroups) + " Service User Groups", "Add the service user to existing supplementary groups"},
-		planItem{itemServiceAll, checkbox(serviceAll, serviceAny) + " Managed Services", "Create, inspect, restart, disable, remove, and list setup-owned user services"},
-		planItem{itemServiceCreate, "  " + checkbox(m.selections.ServiceCreate, m.selections.ServiceCreate) + " Create Service", "Create and start a setup-managed per-user systemd service"},
-		planItem{itemServiceStatus, "  " + checkbox(m.selections.ServiceStatus, m.selections.ServiceStatus) + " Service Status", "Show systemd status for a managed service"},
-		planItem{itemServiceLogs, "  " + checkbox(m.selections.ServiceLogs, m.selections.ServiceLogs) + " Service Logs", "Show recent journal output for a managed service"},
-		planItem{itemServiceRestart, "  " + checkbox(m.selections.ServiceRestart, m.selections.ServiceRestart) + " Restart Service", "Restart a managed service"},
-		planItem{itemServiceList, "  " + checkbox(m.selections.ServiceList, m.selections.ServiceList) + " List Services", "List setup-managed service unit files"},
-		planItem{itemServiceDisable, "  " + checkbox(m.selections.ServiceDisable, m.selections.ServiceDisable) + " Disable Service", "Stop and disable a managed service after confirmation"},
-		planItem{itemServiceRemove, "  " + checkbox(m.selections.ServiceRemove, m.selections.ServiceRemove) + " Remove Service", "Stop, disable, and delete a managed service unit after confirmation"},
-		planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "UFW, common ports, fail2ban, Docker logs, diagnostics, updates"},
-		planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, preserve SSH access"},
-		planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Open tcp/80 through UFW"},
-		planItem{itemHTTPS, "  " + checkbox(m.selections.FirewallHTTPS, m.selections.FirewallHTTPS) + " Allow HTTPS", "Open tcp/443 through UFW"},
-		planItem{itemMosh, "  " + checkbox(m.selections.FirewallMosh, m.selections.FirewallMosh) + " Allow Mosh", "Open udp/60000:61000 through UFW"},
-		planItem{itemFirewallCustom, "  " + checkbox(m.selections.FirewallCustom, m.selections.FirewallCustom) + " Custom Firewall Rule", "Open a custom TCP/UDP port or range through UFW"},
-		planItem{itemNetworkStatus, "  " + checkbox(m.selections.NetworkStatus, m.selections.NetworkStatus) + " Network Status", "Show verbose UFW status"},
-		planItem{itemNetworkList, "  " + checkbox(m.selections.NetworkList, m.selections.NetworkList) + " Numbered Network Rules", "Show numbered UFW rules"},
-		planItem{itemNetworkDelete, "  " + checkbox(m.selections.NetworkDelete, m.selections.NetworkDelete) + " Delete Network Rule", "Delete a numbered UFW rule after confirmation"},
-		planItem{itemNetworkReset, "  " + checkbox(m.selections.NetworkReset, m.selections.NetworkReset) + " Reset Firewall", "Reset UFW rules after confirmation"},
-		planItem{itemFail2Ban, "  " + checkbox(m.selections.Fail2Ban, m.selections.Fail2Ban) + " fail2ban SSH Jail", "Install fail2ban and manage the setup SSH jail"},
-		planItem{itemFail2BanStatus, "  " + checkbox(m.selections.Fail2BanStatus, m.selections.Fail2BanStatus) + " fail2ban Status", "Show fail2ban SSH jail status"},
-		planItem{itemFail2BanUnban, "  " + checkbox(m.selections.Fail2BanUnban, m.selections.Fail2BanUnban) + " fail2ban Unban IP", "Unban an IP address from the SSH jail"},
-		planItem{itemDockerLog, "  " + checkbox(m.selections.DockerLogRotation, m.selections.DockerLogRotation) + " Docker Log Rotation", "Set json-file max-size=10m and max-file=3"},
-		planItem{itemContainersDisk, "  " + checkbox(m.selections.ContainersDisk, m.selections.ContainersDisk) + " Docker Disk Usage", "Show Docker system disk usage"},
-		planItem{itemContainersPrune, "  " + checkbox(m.selections.ContainersPrune, m.selections.ContainersPrune) + " Docker Prune", "Prune selected Docker resources after confirmation"},
-		planItem{itemDoctor, "  " + checkbox(m.selections.Diagnostics, m.selections.Diagnostics) + " Doctor Diagnostics", "Read-only checks for LXC, services, SSH, UFW, Docker"},
-		planItem{itemUpdates, "  " + checkbox(m.selections.UpdatesCheck, m.selections.UpdatesCheck) + " Update Check", "Refresh apt metadata and list available upgrades"},
-		planItem{itemUpdatesUpgrade, "  " + checkbox(m.selections.UpdatesUpgrade, m.selections.UpdatesUpgrade) + " Full Upgrade", "Run apt update and full-upgrade"},
-		planItem{itemUpdatesRebootN, "  " + checkbox(m.selections.UpdatesRebootNeed, m.selections.UpdatesRebootNeed) + " Reboot Needed", "Show whether packages require a reboot"},
-		planItem{itemUpdatesUnattend, "  " + checkbox(m.selections.UpdatesUnattended, m.selections.UpdatesUnattended) + " Unattended Status", "Show unattended-upgrades service status"},
-		planItem{itemUpdatesFailed, "  " + checkbox(m.selections.UpdatesFailed, m.selections.UpdatesFailed) + " Failed Units", "Show failed systemd units"},
-		planItem{itemUpdatesReboot, "  " + checkbox(m.selections.UpdatesReboot, m.selections.UpdatesReboot) + " Reboot Instance", "Reboot the instance after confirmation"},
-		planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "ripgrep, fd, bat, yq, glow, gh"},
-		planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "Verified GitHub release .deb with apt fallback"},
-		planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "Verified release .deb with Debian fd-find alias handling"},
-		planItem{itemBat, "  " + checkbox(m.selections.Tools.Bat, m.selections.Tools.Bat) + " bat", "Verified release .deb with Debian batcat alias handling"},
-		planItem{itemYq, "  " + checkbox(m.selections.Tools.Yq, m.selections.Tools.Yq) + " yq", "Verified linux/amd64 binary from mikefarah/yq"},
-		planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with fingerprint verification"},
-		planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with fingerprint verification"},
-		planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Go, Node.js, Rust, linters, release tooling, pnpm"},
-		planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide go.dev install with SHA256 verification"},
-		planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, Node.js, corepack, TypeScript, tsx"},
-		planItem{itemRust, "  " + checkbox(m.selections.DevTools.Rust, m.selections.DevTools.Rust) + " Rust", "Per-user stable rustup toolchain and components"},
-		planItem{itemGoLint, "  " + checkbox(m.selections.DevTools.GoLint, m.selections.DevTools.GoLint) + " golangci-lint", "Verified release archive to /usr/local/bin"},
-		planItem{itemGoRel, "  " + checkbox(m.selections.DevTools.GoReleaser, m.selections.DevTools.GoReleaser) + " GoReleaser", "Verified release archive to /usr/local/bin"},
-		planItem{itemGoVuln, "  " + checkbox(m.selections.DevTools.GoVulnCheck, m.selections.DevTools.GoVulnCheck) + " govulncheck", "Official Go vulnerability scanner via go install"},
-		planItem{itemPnpm, "  " + checkbox(m.selections.DevTools.Pnpm, m.selections.DevTools.Pnpm) + " pnpm", "Per-user pnpm through Corepack"},
+	switch area {
+	case areaFreshSetup:
+		return []list.Item{
+			planItem{itemBootstrap, checkbox(m.selections.Bootstrap, m.selections.Bootstrap) + " System Bootstrap", "Locale, apt, base packages, SSH hardening, unattended upgrades, Docker"},
+		}
+	case areaUsers:
+		return []list.Item{
+			planItem{itemUserAll, checkbox(userAll, userAny) + " User Management", "Login-user and setup-owned service-user workflows"},
+			planItem{itemAddUser, "  " + checkbox(m.selections.UserLoginAll(), m.selections.UserLoginAny()) + " Login User Workflow", "Create/reuse login user with the classic default access set"},
+			planItem{itemUserCreateLogin, "    " + checkbox(m.selections.UserCreateLogin, m.selections.UserCreateLogin) + " Create Login User", "Create or reuse the target login account"},
+			planItem{itemUserSSHKey, "    " + checkbox(m.selections.UserSSHKey, m.selections.UserSSHKey) + " Add SSH Key", "Append the provided public key to authorized_keys"},
+			planItem{itemUserAllowSSH, "    " + checkbox(m.selections.UserAllowSSH, m.selections.UserAllowSSH) + " Allow SSH Login", "Add the user to setup-managed AllowUsers"},
+			planItem{itemUserDenySSH, "    " + checkbox(m.selections.UserDenySSH, m.selections.UserDenySSH) + " Deny SSH Login", "Remove the user from setup-managed AllowUsers"},
+			planItem{itemUserSudo, "    " + checkbox(m.selections.UserSudo, m.selections.UserSudo) + " Passwordless Sudo", "Write setup-managed /etc/sudoers.d/<user>"},
+			planItem{itemUserSudoDisable, "    " + checkbox(m.selections.UserSudoDisable, m.selections.UserSudoDisable) + " Disable Sudo", "Remove setup-managed passwordless sudo"},
+			planItem{itemUserLinger, "    " + checkbox(m.selections.UserLinger, m.selections.UserLinger) + " Enable Linger", "Enable systemd user lingering"},
+			planItem{itemUserLingerDis, "    " + checkbox(m.selections.UserLingerDisable, m.selections.UserLingerDisable) + " Disable Linger", "Disable systemd user lingering"},
+			planItem{itemUserDockerGroup, "    " + checkbox(m.selections.UserDockerGroup, m.selections.UserDockerGroup) + " Docker Group", "Add the login user to the existing docker group"},
+			planItem{itemUserDisable, "    " + checkbox(m.selections.UserDisable, m.selections.UserDisable) + " Disable User", "Lock access without deleting user data"},
+			planItem{itemUserDelete, "    " + checkbox(m.selections.UserDelete, m.selections.UserDelete) + " Delete User", "Disable access and delete the account while preserving home"},
+			planItem{itemServiceUser, "  " + checkbox(m.selections.UserCreateService, m.selections.UserCreateService) + " Service User", "Create a setup-owned no-login system user under /var/lib/<user>"},
+			planItem{itemServiceGroups, "    " + checkbox(m.selections.UserServiceGroups, m.selections.UserServiceGroups) + " Service User Groups", "Add the service user to existing supplementary groups"},
+		}
+	case areaGroups:
+		return []list.Item{
+			planItem{itemGroupCreate, "  " + checkbox(m.selections.GroupCreate, m.selections.GroupCreate) + " Create Group", "Create a system group if needed"},
+			planItem{itemGroupDelete, "  " + checkbox(m.selections.GroupDelete, m.selections.GroupDelete) + " Delete Group", "Delete a group after primary-group safety checks"},
+			planItem{itemGroupList, "  " + checkbox(m.selections.GroupList, m.selections.GroupList) + " List Groups", "List system groups"},
+			planItem{itemGroupAddUser, "  " + checkbox(m.selections.GroupAddUser, m.selections.GroupAddUser) + " Add User To Group", "Add a user to an existing group"},
+			planItem{itemGroupRemoveUser, "  " + checkbox(m.selections.GroupRemoveUser, m.selections.GroupRemoveUser) + " Remove User From Group", "Remove a user from a group"},
+		}
+	case areaServices:
+		return []list.Item{
+			planItem{itemServiceAll, checkbox(serviceAll, serviceAny) + " Managed Services", "Create, inspect, restart, disable, remove, and list setup-owned user services"},
+			planItem{itemServiceCreate, "  " + checkbox(m.selections.ServiceCreate, m.selections.ServiceCreate) + " Create Service", "Create and start a setup-managed per-user systemd service"},
+			planItem{itemServiceStatus, "  " + checkbox(m.selections.ServiceStatus, m.selections.ServiceStatus) + " Service Status", "Show systemd status for a managed service"},
+			planItem{itemServiceLogs, "  " + checkbox(m.selections.ServiceLogs, m.selections.ServiceLogs) + " Service Logs", "Show recent journal output for a managed service"},
+			planItem{itemServiceRestart, "  " + checkbox(m.selections.ServiceRestart, m.selections.ServiceRestart) + " Restart Service", "Restart a managed service"},
+			planItem{itemServiceList, "  " + checkbox(m.selections.ServiceList, m.selections.ServiceList) + " List Services", "List setup-managed service unit files"},
+			planItem{itemServiceDisable, "  " + checkbox(m.selections.ServiceDisable, m.selections.ServiceDisable) + " Disable Service", "Stop and disable a managed service after confirmation"},
+			planItem{itemServiceRemove, "  " + checkbox(m.selections.ServiceRemove, m.selections.ServiceRemove) + " Remove Service", "Stop, disable, and delete a managed service unit after confirmation"},
+		}
+	case areaInstance:
+		return []list.Item{
+			planItem{itemManageAll, checkbox(manageAll, manageAny) + " Instance Management", "UFW, common ports, fail2ban, Docker logs, diagnostics, updates"},
+			planItem{itemFirewall, "  " + checkbox(m.selections.FirewallBaseline, m.selections.FirewallBaseline) + " UFW Firewall Baseline", "Default deny incoming, allow outgoing, preserve SSH access"},
+			planItem{itemHTTP, "  " + checkbox(m.selections.FirewallHTTP, m.selections.FirewallHTTP) + " Allow HTTP", "Open tcp/80 through UFW"},
+			planItem{itemHTTPS, "  " + checkbox(m.selections.FirewallHTTPS, m.selections.FirewallHTTPS) + " Allow HTTPS", "Open tcp/443 through UFW"},
+			planItem{itemMosh, "  " + checkbox(m.selections.FirewallMosh, m.selections.FirewallMosh) + " Allow Mosh", "Open udp/60000:61000 through UFW"},
+			planItem{itemFirewallCustom, "  " + checkbox(m.selections.FirewallCustom, m.selections.FirewallCustom) + " Custom Firewall Rule", "Open a custom TCP/UDP port or range through UFW"},
+			planItem{itemNetworkStatus, "  " + checkbox(m.selections.NetworkStatus, m.selections.NetworkStatus) + " Network Status", "Show verbose UFW status"},
+			planItem{itemNetworkList, "  " + checkbox(m.selections.NetworkList, m.selections.NetworkList) + " Numbered Network Rules", "Show numbered UFW rules"},
+			planItem{itemNetworkDelete, "  " + checkbox(m.selections.NetworkDelete, m.selections.NetworkDelete) + " Delete Network Rule", "Delete a numbered UFW rule after confirmation"},
+			planItem{itemNetworkReset, "  " + checkbox(m.selections.NetworkReset, m.selections.NetworkReset) + " Reset Firewall", "Reset UFW rules after confirmation"},
+			planItem{itemFail2Ban, "  " + checkbox(m.selections.Fail2Ban, m.selections.Fail2Ban) + " fail2ban SSH Jail", "Install fail2ban and manage the setup SSH jail"},
+			planItem{itemFail2BanStatus, "  " + checkbox(m.selections.Fail2BanStatus, m.selections.Fail2BanStatus) + " fail2ban Status", "Show fail2ban SSH jail status"},
+			planItem{itemFail2BanUnban, "  " + checkbox(m.selections.Fail2BanUnban, m.selections.Fail2BanUnban) + " fail2ban Unban IP", "Unban an IP address from the SSH jail"},
+			planItem{itemDockerLog, "  " + checkbox(m.selections.DockerLogRotation, m.selections.DockerLogRotation) + " Docker Log Rotation", "Set json-file max-size=10m and max-file=3"},
+			planItem{itemContainersDisk, "  " + checkbox(m.selections.ContainersDisk, m.selections.ContainersDisk) + " Docker Disk Usage", "Show Docker system disk usage"},
+			planItem{itemContainersPrune, "  " + checkbox(m.selections.ContainersPrune, m.selections.ContainersPrune) + " Docker Prune", "Prune selected Docker resources after confirmation"},
+			planItem{itemUpdates, "  " + checkbox(m.selections.UpdatesCheck, m.selections.UpdatesCheck) + " Update Check", "Refresh apt metadata and list available upgrades"},
+			planItem{itemUpdatesUpgrade, "  " + checkbox(m.selections.UpdatesUpgrade, m.selections.UpdatesUpgrade) + " Full Upgrade", "Run apt update and full-upgrade"},
+			planItem{itemUpdatesRebootN, "  " + checkbox(m.selections.UpdatesRebootNeed, m.selections.UpdatesRebootNeed) + " Reboot Needed", "Show whether packages require a reboot"},
+			planItem{itemUpdatesUnattend, "  " + checkbox(m.selections.UpdatesUnattended, m.selections.UpdatesUnattended) + " Unattended Status", "Show unattended-upgrades service status"},
+			planItem{itemUpdatesFailed, "  " + checkbox(m.selections.UpdatesFailed, m.selections.UpdatesFailed) + " Failed Units", "Show failed systemd units"},
+			planItem{itemUpdatesReboot, "  " + checkbox(m.selections.UpdatesReboot, m.selections.UpdatesReboot) + " Reboot Instance", "Reboot the instance after confirmation"},
+		}
+	case areaTools:
+		return []list.Item{
+			planItem{itemCLIAll, checkbox(cliAll, m.selections.Tools.Any()) + " CLI Tools", "ripgrep, fd, bat, yq, glow, gh"},
+			planItem{itemRipgrep, "  " + checkbox(m.selections.Tools.Ripgrep, m.selections.Tools.Ripgrep) + " ripgrep", "Verified GitHub release .deb with apt fallback"},
+			planItem{itemFd, "  " + checkbox(m.selections.Tools.Fd, m.selections.Tools.Fd) + " fd", "Verified release .deb with Debian fd-find alias handling"},
+			planItem{itemBat, "  " + checkbox(m.selections.Tools.Bat, m.selections.Tools.Bat) + " bat", "Verified release .deb with Debian batcat alias handling"},
+			planItem{itemYq, "  " + checkbox(m.selections.Tools.Yq, m.selections.Tools.Yq) + " yq", "Verified linux/amd64 binary from mikefarah/yq"},
+			planItem{itemGlow, "  " + checkbox(m.selections.Tools.Glow, m.selections.Tools.Glow) + " glow", "charm.sh apt repository with fingerprint verification"},
+			planItem{itemGh, "  " + checkbox(m.selections.Tools.Gh, m.selections.Tools.Gh) + " gh", "GitHub CLI apt repository with fingerprint verification"},
+		}
+	case areaDevTools:
+		return []list.Item{
+			planItem{itemDevAll, checkbox(devAll, m.selections.DevTools.Any()) + " Development Tools", "Go, Node.js, Rust, linters, release tooling, pnpm"},
+			planItem{itemGo, "  " + checkbox(m.selections.DevTools.Go, m.selections.DevTools.Go) + " Go", "System-wide go.dev install with SHA256 verification"},
+			planItem{itemNode, "  " + checkbox(m.selections.DevTools.Node, m.selections.DevTools.Node) + " Node.js", "Per-user fnm, Node.js, corepack, TypeScript, tsx"},
+			planItem{itemRust, "  " + checkbox(m.selections.DevTools.Rust, m.selections.DevTools.Rust) + " Rust", "Per-user stable rustup toolchain and components"},
+			planItem{itemGoLint, "  " + checkbox(m.selections.DevTools.GoLint, m.selections.DevTools.GoLint) + " golangci-lint", "Verified release archive to /usr/local/bin"},
+			planItem{itemGoRel, "  " + checkbox(m.selections.DevTools.GoReleaser, m.selections.DevTools.GoReleaser) + " GoReleaser", "Verified release archive to /usr/local/bin"},
+			planItem{itemGoVuln, "  " + checkbox(m.selections.DevTools.GoVulnCheck, m.selections.DevTools.GoVulnCheck) + " govulncheck", "Official Go vulnerability scanner via go install"},
+			planItem{itemPnpm, "  " + checkbox(m.selections.DevTools.Pnpm, m.selections.DevTools.Pnpm) + " pnpm", "Per-user pnpm through Corepack"},
+		}
+	case areaDiagnostics:
+		return []list.Item{
+			planItem{itemDoctor, checkbox(m.selections.Diagnostics, m.selections.Diagnostics) + " Doctor Diagnostics", "Read-only checks for LXC, services, SSH, UFW, Docker"},
+		}
 	}
+	return nil
 }
 
 func checkbox(checked, partial bool) string {
@@ -747,7 +1029,12 @@ func checkbox(checked, partial bool) string {
 }
 
 func (m *model) refreshPlanList() tea.Cmd {
-	return m.planList.SetItems(m.planItems())
+	m.planList.Title = areaTitle(m.currentArea)
+	return m.planList.SetItems(m.planItems(m.currentArea))
+}
+
+func (m *model) refreshHomeList() tea.Cmd {
+	return m.homeList.SetItems(m.homeItems())
 }
 
 func (m *model) resize(width, height int) {
@@ -766,9 +1053,11 @@ func (m *model) resize(width, height int) {
 	if listHeight < 12 {
 		listHeight = 12
 	}
+	m.homeList.SetSize(pageWidth, listHeight)
 	m.planList.SetSize(pageWidth, listHeight)
 	m.help.SetWidth(pageWidth)
 	m.usernameInput.SetWidth(pageWidth - 4)
+	m.groupNameInput.SetWidth(pageWidth - 4)
 	m.serviceGroupsInput.SetWidth(pageWidth - 4)
 	m.serviceNameInput.SetWidth(pageWidth - 4)
 	m.serviceWorkDir.SetWidth(pageWidth - 4)
@@ -904,6 +1193,9 @@ func (m model) inputFlow() []screen {
 	if m.selections.NeedsUsername() {
 		flow = append(flow, screenInputUser)
 	}
+	if m.selections.NeedsGroupName() {
+		flow = append(flow, screenInputGroupName)
+	}
 	if m.selections.NeedsServiceUserGroups() && m.selections.UserServiceGroups {
 		flow = append(flow, screenInputServiceUserGroups)
 	}
@@ -944,112 +1236,14 @@ func (m model) inputFlow() []screen {
 }
 
 func (m model) selectedPlanCount() int {
-	count := 0
-	if m.selections.Bootstrap {
-		count++
-	}
-	for _, selected := range []bool{
-		m.selections.UserCreateLogin,
-		m.selections.UserSSHKey,
-		m.selections.UserAllowSSH,
-		m.selections.UserSudo,
-		m.selections.UserLinger,
-		m.selections.UserDockerGroup,
-		m.selections.UserCreateService,
-		m.selections.UserServiceGroups,
-		m.selections.ServiceCreate,
-		m.selections.ServiceStatus,
-		m.selections.ServiceLogs,
-		m.selections.ServiceRestart,
-		m.selections.ServiceList,
-		m.selections.ServiceDisable,
-		m.selections.ServiceRemove,
-	} {
-		if selected {
-			count++
-		}
-	}
-	count += len(m.selections.Tools.SelectedTools())
-	if m.selections.FirewallBaseline {
-		count++
-	}
-	if m.selections.FirewallHTTP {
-		count++
-	}
-	if m.selections.FirewallHTTPS {
-		count++
-	}
-	if m.selections.FirewallMosh {
-		count++
-	}
-	if m.selections.FirewallCustom {
-		count++
-	}
-	if m.selections.NetworkStatus {
-		count++
-	}
-	if m.selections.NetworkList {
-		count++
-	}
-	if m.selections.NetworkDelete {
-		count++
-	}
-	if m.selections.NetworkReset {
-		count++
-	}
-	if m.selections.Fail2Ban {
-		count++
-	}
-	if m.selections.Fail2BanStatus {
-		count++
-	}
-	if m.selections.Fail2BanUnban {
-		count++
-	}
-	if m.selections.DockerLogRotation {
-		count++
-	}
-	if m.selections.ContainersDisk {
-		count++
-	}
-	if m.selections.ContainersPrune {
-		count++
-	}
-	if m.selections.Diagnostics {
-		count++
-	}
-	if m.selections.UpdatesCheck {
-		count++
-	}
-	if m.selections.UpdatesUpgrade {
-		count++
-	}
-	if m.selections.UpdatesRebootNeed {
-		count++
-	}
-	if m.selections.UpdatesUnattended {
-		count++
-	}
-	if m.selections.UpdatesFailed {
-		count++
-	}
-	if m.selections.UpdatesReboot {
-		count++
-	}
-	for _, selected := range []bool{
-		m.selections.DevTools.Go,
-		m.selections.DevTools.Node,
-		m.selections.DevTools.Rust,
-		m.selections.DevTools.GoLint,
-		m.selections.DevTools.GoReleaser,
-		m.selections.DevTools.GoVulnCheck,
-		m.selections.DevTools.Pnpm,
-	} {
-		if selected {
-			count++
-		}
-	}
-	return count
+	return m.selectedAreaCount(areaFreshSetup) +
+		m.selectedAreaCount(areaUsers) +
+		m.selectedAreaCount(areaGroups) +
+		m.selectedAreaCount(areaServices) +
+		m.selectedAreaCount(areaInstance) +
+		m.selectedAreaCount(areaTools) +
+		m.selectedAreaCount(areaDevTools) +
+		m.selectedAreaCount(areaDiagnostics)
 }
 
 func (m model) runProgress() float64 {

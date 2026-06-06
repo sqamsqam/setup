@@ -21,20 +21,17 @@ func TestInitialModel(t *testing.T) {
 	if m.timezoneInput.Value() != "UTC" {
 		t.Errorf("expected default timezone UTC, got: %s", m.timezoneInput.Value())
 	}
-	if m.screen != screenMainMenu {
-		t.Errorf("expected screenMainMenu, got: %d", m.screen)
+	if m.screen != screenHome {
+		t.Errorf("expected screenHome, got: %d", m.screen)
 	}
-	if !m.selections.Bootstrap || !m.selections.UserLoginAll() || !m.selections.Tools.Any() || !m.selections.DevTools.Any() {
-		t.Fatalf("expected full default selection: %#v", m.selections)
+	if m.selections.Any() {
+		t.Fatalf("expected no default selection: %#v", m.selections)
 	}
-	if m.selections.UserCreateService {
-		t.Fatal("service user should not be selected by default")
+	if len(m.homeItems()) != 8 {
+		t.Errorf("expected 8 home items, got: %d", len(m.homeItems()))
 	}
-	if m.selections.ServiceAny() {
-		t.Fatal("managed services should not be selected by default")
-	}
-	if len(m.planItems()) != 57 {
-		t.Errorf("expected 57 plan items, got: %d", len(m.planItems()))
+	if len(m.planItems(areaFreshSetup)) != 1 {
+		t.Errorf("expected 1 fresh setup item, got: %d", len(m.planItems(areaFreshSetup)))
 	}
 }
 
@@ -50,7 +47,7 @@ func TestInitialModelDemoMode(t *testing.T) {
 	if !m.demo {
 		t.Error("expected demo to be true")
 	}
-	if strings.Contains(m.mainMenuView(), "DRY RUN") {
+	if strings.Contains(m.homeView(), "DRY RUN") {
 		t.Fatal("demo mode should not render dry-run banner")
 	}
 }
@@ -118,13 +115,13 @@ func TestToggleCLIAll(t *testing.T) {
 	m := InitialModel(false)
 
 	m.togglePlanItem(itemCLIAll)
-	if m.selections.Tools.Any() {
-		t.Fatalf("expected CLI tools to be disabled: %#v", m.selections.Tools)
+	if got := len(m.selections.Tools.SelectedTools()); got != 6 {
+		t.Fatalf("expected all CLI tools selected, got %d", got)
 	}
 
 	m.togglePlanItem(itemCLIAll)
-	if got := len(m.selections.Tools.SelectedTools()); got != 6 {
-		t.Fatalf("expected all CLI tools selected, got %d", got)
+	if m.selections.Tools.Any() {
+		t.Fatalf("expected CLI tools to be disabled: %#v", m.selections.Tools)
 	}
 }
 
@@ -183,11 +180,14 @@ func TestToggleInstanceManagementAll(t *testing.T) {
 
 func TestMainMenuSpaceTogglesSelectedPlanItem(t *testing.T) {
 	m := InitialModel(false)
+	m.screen = screenMainMenu
+	m.currentArea = areaFreshSetup
+	m.planList = m.newPlanList()
 
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeySpace, Text: " "}))
 	got := updated.(model)
-	if got.selections.Bootstrap {
-		t.Fatal("expected space to toggle the selected bootstrap item off")
+	if !got.selections.Bootstrap {
+		t.Fatal("expected space to toggle the selected bootstrap item on")
 	}
 
 	item, ok := got.planList.SelectedItem().(planItem)
@@ -195,8 +195,8 @@ func TestMainMenuSpaceTogglesSelectedPlanItem(t *testing.T) {
 		t.Fatal("expected selected plan item")
 	}
 	_, state, title := splitPlanTitle(item.Title())
-	if state != toggleOff || title != "System Bootstrap" {
-		t.Fatalf("expected unchecked System Bootstrap item, got state=%d title=%q", state, title)
+	if state != toggleOn || title != "System Bootstrap" {
+		t.Fatalf("expected checked System Bootstrap item, got state=%d title=%q", state, title)
 	}
 }
 
@@ -248,8 +248,9 @@ func TestPlanDelegateUsesToggleGlyphs(t *testing.T) {
 	}
 }
 
-func TestStartInputFlowDefaultStartsWithTimezone(t *testing.T) {
+func TestStartInputFlowWithFreshSetupStartsWithTimezone(t *testing.T) {
 	m := InitialModel(false)
+	m.selections.Bootstrap = true
 
 	updated, _ := m.startInputFlow()
 	got := updated.(model)
@@ -262,6 +263,7 @@ func TestStartInputFlowWithOnlyCLIShowsConfirm(t *testing.T) {
 	m := InitialModel(false)
 	m.selections = selectionState{}
 	m.selections.Tools.Yq = true
+	m.currentArea = areaTools
 
 	updated, _ := m.startInputFlow()
 	got := updated.(model)
@@ -273,6 +275,7 @@ func TestStartInputFlowWithOnlyCLIShowsConfirm(t *testing.T) {
 func TestStartInputFlowWithServiceListStartsWithUser(t *testing.T) {
 	m := InitialModel(false)
 	m.selections = selectionState{ServiceList: true}
+	m.currentArea = areaServices
 
 	updated, _ := m.startInputFlow()
 	got := updated.(model)
@@ -283,6 +286,7 @@ func TestStartInputFlowWithServiceListStartsWithUser(t *testing.T) {
 
 func TestStartInputFlowRejectsEmptySelection(t *testing.T) {
 	m := InitialModel(false)
+	m.screen = screenMainMenu
 	m.selections = selectionState{}
 
 	updated, _ := m.startInputFlow()
@@ -297,8 +301,8 @@ func TestStartInputFlowRejectsEmptySelection(t *testing.T) {
 
 func TestInputFlow(t *testing.T) {
 	m := InitialModel(false)
-	if got := len(m.inputFlow()); got != 3 {
-		t.Fatalf("expected timezone, username, key screens, got %d", got)
+	if got := len(m.inputFlow()); got != 0 {
+		t.Fatalf("expected no default input screens, got %d", got)
 	}
 
 	m.selections = selectionState{}
@@ -357,10 +361,23 @@ func TestInputFlow(t *testing.T) {
 			t.Fatalf("admin flow = %#v, want %#v", flow, want)
 		}
 	}
+
+	m.selections = selectionState{GroupAddUser: true}
+	flow = m.inputFlow()
+	want = []screen{screenInputUser, screenInputGroupName}
+	if len(flow) != len(want) {
+		t.Fatalf("group membership flow = %#v, want %#v", flow, want)
+	}
+	for i := range want {
+		if flow[i] != want[i] {
+			t.Fatalf("group membership flow = %#v, want %#v", flow, want)
+		}
+	}
 }
 
-func TestBuildRunStepsDefault(t *testing.T) {
+func TestBuildRunStepsFreshUserTools(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	steps := m.buildRunSteps()
 
 	if len(steps) != 16 {
@@ -397,6 +414,22 @@ func TestBuildRunStepsManagedServices(t *testing.T) {
 		t.Fatalf("expected 3 service steps, got %d", len(steps))
 	}
 	want := []runStepID{runServiceCreate, runServiceList, runServiceRemove}
+	for i := range want {
+		if steps[i].id != want[i] {
+			t.Fatalf("steps = %#v, want ids %#v", steps, want)
+		}
+	}
+}
+
+func TestBuildRunStepsGroups(t *testing.T) {
+	m := InitialModel(false)
+	m.selections = selectionState{GroupCreate: true, GroupList: true, GroupRemoveUser: true}
+
+	steps := m.buildRunSteps()
+	want := []runStepID{runGroupCreate, runGroupList, runGroupRemoveUser}
+	if len(steps) != len(want) {
+		t.Fatalf("expected %d group steps, got %d", len(want), len(steps))
+	}
 	for i := range want {
 		if steps[i].id != want[i] {
 			t.Fatalf("steps = %#v, want ids %#v", steps, want)
@@ -611,6 +644,7 @@ func TestConfirmBodyIncludesManagedServiceWarnings(t *testing.T) {
 
 func TestConfirmScreenScrolls(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	m.resize(80, 12)
 	m.screen = screenConfirm
 	m.refreshConfirm()
@@ -624,6 +658,7 @@ func TestConfirmScreenScrolls(t *testing.T) {
 
 func TestRunningViewFitsTerminalHeight(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	m.runSteps = m.buildRunSteps()
 	m.runningIndex = 0
 	m.runSteps[0].status = stepRunning
@@ -640,6 +675,7 @@ func TestRunningViewFitsTerminalHeight(t *testing.T) {
 
 func TestRunningViewFitsTerminalHeightWithLongLogLines(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	m.runSteps = m.buildRunSteps()
 	m.runningIndex = 0
 	m.runSteps[0].status = stepRunning
@@ -677,6 +713,7 @@ func TestRefreshOutputTruncatesLongLogLines(t *testing.T) {
 
 func TestDoneViewFitsTerminalHeight(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	m.runSteps = m.buildRunSteps()
 	for i := range m.runSteps {
 		m.runSteps[i].status = stepOK
@@ -694,6 +731,7 @@ func TestDoneViewFitsTerminalHeight(t *testing.T) {
 
 func TestRunningStepListScrolls(t *testing.T) {
 	m := InitialModel(false)
+	m.selections = defaultSelections()
 	m.runSteps = m.buildRunSteps()
 	m.runningIndex = 0
 	m.runSteps[0].status = stepRunning
@@ -718,7 +756,7 @@ func TestViewsFitStandardTerminalHeight(t *testing.T) {
 			model: func() model {
 				m := InitialModel(true)
 				m.resize(80, 24)
-				m.planErr = "select at least one provisioning item"
+				m.planErr = "select at least one action"
 				return m
 			},
 		},
@@ -806,6 +844,7 @@ func TestViewsFitStandardTerminalHeight(t *testing.T) {
 			name: "confirm",
 			model: func() model {
 				m := InitialModel(true)
+				m.selections = defaultSelections()
 				m.resize(80, 24)
 				m.screen = screenConfirm
 				m.refreshConfirm()
@@ -816,6 +855,7 @@ func TestViewsFitStandardTerminalHeight(t *testing.T) {
 			name: "running",
 			model: func() model {
 				m := InitialModel(false)
+				m.selections = defaultSelections()
 				m.runSteps = m.buildRunSteps()
 				m.runningIndex = 0
 				m.runSteps[0].status = stepRunning
@@ -831,6 +871,7 @@ func TestViewsFitStandardTerminalHeight(t *testing.T) {
 			name: "done",
 			model: func() model {
 				m := InitialModel(false)
+				m.selections = defaultSelections()
 				m.runSteps = m.buildRunSteps()
 				for i := range m.runSteps {
 					m.runSteps[i].status = stepOK

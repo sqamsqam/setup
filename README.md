@@ -30,6 +30,8 @@ sudo setup user --user dev --key-file ~/.ssh/id_ed25519.pub
 sudo setup user create --user dev --key-file ~/.ssh/id_ed25519.pub --allow-ssh --sudo --linger --group docker
 sudo setup user ssh allow --user dev
 sudo setup user service create --user app --group www-data
+sudo setup group create --group app
+sudo setup group user add --user dev --group app
 sudo setup tools
 sudo setup dev --user dev --all
 sudo setup check
@@ -48,6 +50,8 @@ sudo setup service create --user dev --name app --workdir /home/dev/app --cmd "n
 sudo setup service list --user dev
 sudo setup service disable --user dev --name app --yes
 sudo setup service remove --user dev --name app --yes
+sudo setup group list
+sudo setup group delete --group app --yes
 ```
 
 Use `--dry-run` to preview changes and `--demo` for clean non-mutating demos.

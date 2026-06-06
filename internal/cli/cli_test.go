@@ -665,6 +665,47 @@ func TestRunNestedUserCommands(t *testing.T) {
 	}
 }
 
+func TestRunGroupCreate(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{"setup", "group", "create", "--group", "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "groupadd app") {
+		t.Fatalf("expected groupadd command, got %q", dryBuf.String())
+	}
+}
+
+func TestRunGroupDeleteRequiresYes(t *testing.T) {
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return setupexec.NewDryRunner() })
+
+	err := app.Run(context.Background(), []string{"setup", "group", "delete", "--group", "app"})
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") {
+		t.Fatalf("expected --yes error, got %v", err)
+	}
+}
+
+func TestRunGroupUserAdd(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{"setup", "group", "user", "add", "--user", "dev", "--group", "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "usermod -aG app dev") {
+		t.Fatalf("expected usermod command, got %q", dryBuf.String())
+	}
+}
+
 func TestRunNestedUserCreateRejectsKeyAndKeyFile(t *testing.T) {
 	keyFile, err := os.CreateTemp(t.TempDir(), "key-*.pub")
 	if err != nil {

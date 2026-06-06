@@ -13,6 +13,7 @@ import (
 	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/firewall"
+	sysgroup "github.com/sqamsqam/setup/internal/group"
 	"github.com/sqamsqam/setup/internal/security"
 	"github.com/sqamsqam/setup/internal/service"
 	"github.com/sqamsqam/setup/internal/system"
@@ -141,14 +142,43 @@ func runStepWithRunner(runner setupexec.CmdRunner, m model, step runStep) error 
 		return user.AddAuthorizedKey(runner, username, normalizeSSHKeyInput(m.sshKeyInput.Value()))
 	case runUserAllowSSH:
 		return user.AllowSSH(runner, username)
+	case runUserDenySSH:
+		return user.DenySSH(runner, username)
 	case runUserSudo:
 		return user.EnablePasswordlessSudo(runner, username)
+	case runUserSudoDisable:
+		return user.DisablePasswordlessSudo(runner, username)
 	case runUserLinger:
 		return user.EnableLinger(runner, username)
+	case runUserLingerDis:
+		return user.DisableLinger(runner, username)
 	case runUserDockerGroup:
 		return user.AddGroup(runner, username, "docker")
+	case runUserDisable:
+		return user.DisableUser(runner, username)
+	case runUserDelete:
+		return user.DeleteUser(runner, username, false)
 	case runServiceUser:
 		return user.CreateServiceUser(runner, username, parseServiceGroups(m.serviceGroupsInput.Value()))
+	case runGroupCreate:
+		return sysgroup.Create(runner, strings.TrimSpace(m.groupNameInput.Value()))
+	case runGroupDelete:
+		return sysgroup.Delete(runner, strings.TrimSpace(m.groupNameInput.Value()))
+	case runGroupList:
+		groups, err := sysgroup.List(runner)
+		if err != nil {
+			return err
+		}
+		if len(groups) == 0 {
+			setupexec.PrintOutput("No groups found.")
+			return nil
+		}
+		setupexec.PrintOutput(strings.Join(groups, "\n"))
+		return nil
+	case runGroupAddUser:
+		return sysgroup.AddUser(runner, username, strings.TrimSpace(m.groupNameInput.Value()))
+	case runGroupRemoveUser:
+		return sysgroup.RemoveUser(runner, username, strings.TrimSpace(m.groupNameInput.Value()))
 	case runServiceCreate:
 		return service.Create(runner, service.Config{
 			User:    username,

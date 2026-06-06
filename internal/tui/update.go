@@ -17,6 +17,7 @@ import (
 	"github.com/sqamsqam/setup/internal/devtools"
 	dockermaint "github.com/sqamsqam/setup/internal/docker"
 	"github.com/sqamsqam/setup/internal/firewall"
+	sysgroup "github.com/sqamsqam/setup/internal/group"
 	"github.com/sqamsqam/setup/internal/service"
 	"github.com/sqamsqam/setup/internal/tools"
 	"github.com/sqamsqam/setup/internal/user"
@@ -53,6 +54,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenInputUser:
 			var cmd tea.Cmd
 			m.usernameInput, cmd = m.usernameInput.Update(msg)
+			return m, cmd
+		case screenInputGroupName:
+			var cmd tea.Cmd
+			m.groupNameInput, cmd = m.groupNameInput.Update(msg)
 			return m, cmd
 		case screenInputServiceUserGroups:
 			var cmd tea.Cmd
@@ -104,12 +109,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.screen {
+		case screenHome:
+			return m.updateHome(msg)
 		case screenMainMenu:
 			return m.updateMainMenu(msg)
 		case screenInputTimezone:
 			return m.updateInputTimezone(msg)
 		case screenInputUser:
 			return m.updateInputUser(msg)
+		case screenInputGroupName:
+			return m.updateInputGroupName(msg)
 		case screenInputServiceUserGroups:
 			return m.updateInputServiceUserGroups(msg)
 		case screenInputServiceName:
@@ -158,6 +167,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenInputUser:
 			var cmd tea.Cmd
 			m.usernameInput, cmd = m.usernameInput.Update(msg)
+			return m, cmd
+		case screenInputGroupName:
+			var cmd tea.Cmd
+			m.groupNameInput, cmd = m.groupNameInput.Update(msg)
 			return m, cmd
 		case screenInputServiceUserGroups:
 			var cmd tea.Cmd
@@ -215,6 +228,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateHome(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.homeList.SettingFilter() {
+		var cmd tea.Cmd
+		m.homeList, cmd = m.homeList.Update(msg)
+		return m, cmd
+	}
+
+	switch {
+	case key.Matches(msg, keys.Quit):
+		m.quitting = true
+		return m, tea.Quit
+	case key.Matches(msg, keys.Select):
+		if item, ok := m.homeList.SelectedItem().(homeItem); ok {
+			m.currentArea = item.area
+			m.planErr = ""
+			m.planList = m.newPlanList()
+			if m.width > 0 && m.height > 0 {
+				m.resize(m.width, m.height)
+			}
+			m.screen = screenMainMenu
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.homeList, cmd = m.homeList.Update(msg)
+	return m, cmd
+}
+
 func (m model) updateMainMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.planList.SettingFilter() {
 		var cmd tea.Cmd
@@ -226,6 +268,9 @@ func (m model) updateMainMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Quit):
 		m.quitting = true
 		return m, tea.Quit
+	case key.Matches(msg, keys.Back):
+		m.planErr = ""
+		return m.goHome()
 	case key.Matches(msg, keys.Toggle):
 		m.planErr = ""
 		if item, ok := m.planList.SelectedItem().(planItem); ok {
@@ -239,6 +284,29 @@ func (m model) updateMainMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.planList, cmd = m.planList.Update(msg)
 	return m, cmd
+}
+
+func (m model) updateInputGroupName(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+		m.quitting = true
+		return m, tea.Quit
+	case key.Matches(msg, keys.Back):
+		m.inputErr = ""
+		return m.goBack()
+	case key.Matches(msg, keys.Continue):
+		if err := sysgroup.ValidateName(strings.TrimSpace(m.groupNameInput.Value())); err != nil {
+			m.inputErr = err.Error()
+			return m, nil
+		}
+		m.inputErr = ""
+		return m.goNext()
+	default:
+		var cmd tea.Cmd
+		m.groupNameInput, cmd = m.groupNameInput.Update(msg)
+		m.inputErr = ""
+		return m, cmd
+	}
 }
 
 func (m model) updateInputTimezone(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -700,7 +768,7 @@ func (m model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Continue):
 		m.runSteps = m.buildRunSteps()
 		if len(m.runSteps) == 0 {
-			m.planErr = "select at least one provisioning item"
+			m.planErr = "select at least one action"
 			m.screen = screenMainMenu
 			return m, nil
 		}
@@ -884,12 +952,22 @@ func (m *model) togglePlanItem(id planItemID) {
 		m.selections.UserSSHKey = !m.selections.UserSSHKey
 	case itemUserAllowSSH:
 		m.selections.UserAllowSSH = !m.selections.UserAllowSSH
+	case itemUserDenySSH:
+		m.selections.UserDenySSH = !m.selections.UserDenySSH
 	case itemUserSudo:
 		m.selections.UserSudo = !m.selections.UserSudo
+	case itemUserSudoDisable:
+		m.selections.UserSudoDisable = !m.selections.UserSudoDisable
 	case itemUserLinger:
 		m.selections.UserLinger = !m.selections.UserLinger
+	case itemUserLingerDis:
+		m.selections.UserLingerDisable = !m.selections.UserLingerDisable
 	case itemUserDockerGroup:
 		m.selections.UserDockerGroup = !m.selections.UserDockerGroup
+	case itemUserDisable:
+		m.selections.UserDisable = !m.selections.UserDisable
+	case itemUserDelete:
+		m.selections.UserDelete = !m.selections.UserDelete
 	case itemServiceUser:
 		m.selections.UserCreateService = !m.selections.UserCreateService
 		if !m.selections.UserCreateService {
@@ -900,6 +978,16 @@ func (m *model) togglePlanItem(id planItemID) {
 		if m.selections.UserServiceGroups {
 			m.selections.UserCreateService = true
 		}
+	case itemGroupCreate:
+		m.selections.GroupCreate = !m.selections.GroupCreate
+	case itemGroupDelete:
+		m.selections.GroupDelete = !m.selections.GroupDelete
+	case itemGroupList:
+		m.selections.GroupList = !m.selections.GroupList
+	case itemGroupAddUser:
+		m.selections.GroupAddUser = !m.selections.GroupAddUser
+	case itemGroupRemoveUser:
+		m.selections.GroupRemoveUser = !m.selections.GroupRemoveUser
 	case itemServiceAll:
 		if m.selections.ServiceAll() {
 			m.selections.ServiceCreate = false
@@ -1070,8 +1158,8 @@ func (m *model) togglePlanItem(id planItemID) {
 
 func (m model) startInputFlow() (tea.Model, tea.Cmd) {
 	m.planErr = ""
-	if !m.selections.Any() {
-		m.planErr = "select at least one provisioning item"
+	if m.selectedAreaCount(m.currentArea) == 0 {
+		m.planErr = "select at least one " + strings.ToLower(areaTitle(m.currentArea)) + " action"
 		return m, nil
 	}
 
@@ -1111,8 +1199,14 @@ func (m model) goBack() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) goHome() (tea.Model, tea.Cmd) {
+	m.screen = screenHome
+	return m, m.refreshHomeList()
+}
+
 func (m *model) focusCurrentInput() tea.Cmd {
 	m.usernameInput.Blur()
+	m.groupNameInput.Blur()
 	m.serviceGroupsInput.Blur()
 	m.serviceNameInput.Blur()
 	m.serviceWorkDir.Blur()
@@ -1138,6 +1232,8 @@ func (m *model) focusCurrentInput() tea.Cmd {
 		return m.timezoneInput.Focus()
 	case screenInputUser:
 		return m.usernameInput.Focus()
+	case screenInputGroupName:
+		return m.groupNameInput.Focus()
 	case screenInputServiceUserGroups:
 		return m.serviceGroupsInput.Focus()
 	case screenInputServiceName:
@@ -1349,11 +1445,25 @@ func (m model) buildRunSteps() []runStep {
 			desc: "Add the user to setup-managed AllowUsers",
 		})
 	}
+	if m.selections.UserDenySSH {
+		steps = append(steps, runStep{
+			id:   runUserDenySSH,
+			name: "Deny SSH Login",
+			desc: "Remove the user from setup-managed AllowUsers",
+		})
+	}
 	if m.selections.UserSudo {
 		steps = append(steps, runStep{
 			id:   runUserSudo,
 			name: "Enable Passwordless Sudo",
 			desc: "Write setup-managed sudoers file",
+		})
+	}
+	if m.selections.UserSudoDisable {
+		steps = append(steps, runStep{
+			id:   runUserSudoDisable,
+			name: "Disable Passwordless Sudo",
+			desc: "Remove setup-managed sudoers file",
 		})
 	}
 	if m.selections.UserLinger {
@@ -1363,6 +1473,13 @@ func (m model) buildRunSteps() []runStep {
 			desc: "Enable systemd user lingering",
 		})
 	}
+	if m.selections.UserLingerDisable {
+		steps = append(steps, runStep{
+			id:   runUserLingerDis,
+			name: "Disable User Linger",
+			desc: "Disable systemd user lingering",
+		})
+	}
 	if m.selections.UserDockerGroup {
 		steps = append(steps, runStep{
 			id:   runUserDockerGroup,
@@ -1370,11 +1487,60 @@ func (m model) buildRunSteps() []runStep {
 			desc: "Add the user to the existing docker group",
 		})
 	}
+	if m.selections.UserDisable {
+		steps = append(steps, runStep{
+			id:   runUserDisable,
+			name: "Disable User",
+			desc: "Lock password and remove setup-managed access",
+		})
+	}
+	if m.selections.UserDelete {
+		steps = append(steps, runStep{
+			id:   runUserDelete,
+			name: "Delete User",
+			desc: "Disable access and delete the account while preserving home",
+		})
+	}
 	if m.selections.UserCreateService {
 		steps = append(steps, runStep{
 			id:   runServiceUser,
 			name: "Create Service User",
 			desc: "Create setup-owned no-login system account under /var/lib",
+		})
+	}
+	if m.selections.GroupCreate {
+		steps = append(steps, runStep{
+			id:   runGroupCreate,
+			name: "Create Group",
+			desc: "Create the selected group if needed",
+		})
+	}
+	if m.selections.GroupDelete {
+		steps = append(steps, runStep{
+			id:   runGroupDelete,
+			name: "Delete Group",
+			desc: "Delete the group after primary-group safety checks",
+		})
+	}
+	if m.selections.GroupList {
+		steps = append(steps, runStep{
+			id:   runGroupList,
+			name: "List Groups",
+			desc: "List system groups",
+		})
+	}
+	if m.selections.GroupAddUser {
+		steps = append(steps, runStep{
+			id:   runGroupAddUser,
+			name: "Add User To Group",
+			desc: "Add the target user to the selected group",
+		})
+	}
+	if m.selections.GroupRemoveUser {
+		steps = append(steps, runStep{
+			id:   runGroupRemoveUser,
+			name: "Remove User From Group",
+			desc: "Remove the target user from the selected group",
 		})
 	}
 	if m.selections.ServiceCreate {

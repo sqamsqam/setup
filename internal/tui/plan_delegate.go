@@ -101,3 +101,54 @@ func splitPlanTitle(title string) (depth string, state toggleState, name string)
 }
 
 var _ list.ItemDelegate = planDelegate{}
+
+type homeDelegate struct{}
+
+func (d homeDelegate) Height() int {
+	return 2
+}
+
+func (d homeDelegate) Spacing() int {
+	return 0
+}
+
+func (d homeDelegate) Update(tea.Msg, *list.Model) tea.Cmd {
+	return nil
+}
+
+func (d homeDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	h, ok := item.(homeItem)
+	if !ok {
+		return
+	}
+
+	width := m.Width()
+	if width <= 0 {
+		return
+	}
+
+	selected := index == m.Index() && m.FilterState() != list.Filtering
+	selector := "  "
+	titleStyle := valueStyle
+	descStyle := dimStyle
+	if selected {
+		selector = selectedStripeStyle.Render("▌") + " "
+		titleStyle = selectedPlanStyle
+		descStyle = selectedPlanDescStyle
+	}
+
+	titleWidth := width - ansi.StringWidth(selector)
+	if titleWidth < 1 {
+		titleWidth = 1
+	}
+	title := titleStyle.Render(ansi.Truncate(h.title, titleWidth, "…"))
+	descPrefix := "      "
+	descWidth := width - ansi.StringWidth(descPrefix)
+	if descWidth < 1 {
+		descWidth = 1
+	}
+	desc := descStyle.Render(ansi.Truncate(h.desc, descWidth, "…"))
+	fmt.Fprintf(w, "%s%s\n%s%s", selector, title, descPrefix, desc) //nolint:errcheck
+}
+
+var _ list.ItemDelegate = homeDelegate{}

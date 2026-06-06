@@ -18,11 +18,13 @@ Enter
 Show
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Fresh Ubuntu Instance Setup/
+Wait+Screen /Setup Admin Console/
 Sleep 700ms
+Down
 Enter
-Wait+Screen /TIMEZONE/
+Wait+Screen /Users/
 Sleep 500ms
+Space
 Enter
 Wait+Screen /Target User/
 Sleep 500ms

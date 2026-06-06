@@ -15,17 +15,11 @@ Enter
 Show
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Fresh Ubuntu Instance Setup/
-Space
-Down
-Space
-Down 41
-Space
-Down 7
-Space
-Space
+Wait+Screen /Setup Admin Console/
 Enter
-Wait+Screen /select at least one provisioning item/
+Wait+Screen /Fresh Setup/
+Enter
+Wait+Screen /select at least one fresh setup action/
 Sleep 500ms
 Screenshot "docs/assets/screenshots/empty-state.png"
 Sleep 500ms

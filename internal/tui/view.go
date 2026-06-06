@@ -15,11 +15,11 @@ import (
 
 func (m model) mainMenuView() string {
 	var s strings.Builder
-	s.WriteString(titleStyle.Render("Fresh Ubuntu Instance Setup"))
+	s.WriteString(titleStyle.Render(areaTitle(m.currentArea)))
 	s.WriteString(" ")
-	s.WriteString(statusStyle.Render("PROVISIONING CONSOLE"))
+	s.WriteString(statusStyle.Render("ADMIN CONSOLE"))
 	s.WriteString("\n")
-	s.WriteString(subtitleStyle.Render("Pick what this container needs, then review the plan."))
+	s.WriteString(subtitleStyle.Render(areaSubtitle(m.currentArea)))
 	s.WriteString("\n\n")
 
 	if !m.dryRun && !m.demo && os.Geteuid() != 0 {
@@ -46,7 +46,38 @@ func (m model) mainMenuView() string {
 
 	s.WriteString(m.planList.View())
 	s.WriteString("\n")
-	s.WriteString(helpStyle.Render(fmt.Sprintf("%d selected item(s)", m.selectedPlanCount())))
+	s.WriteString(helpStyle.Render(fmt.Sprintf("%d selected action(s) in %s", m.selectedAreaCount(m.currentArea), areaTitle(m.currentArea))))
+	return s.String()
+}
+
+func (m model) homeView() string {
+	var s strings.Builder
+	s.WriteString(titleStyle.Render("Setup Admin Console"))
+	s.WriteString(" ")
+	s.WriteString(statusStyle.Render("NO DEFAULTS"))
+	s.WriteString("\n")
+	s.WriteString(subtitleStyle.Render("Choose a management area. Nothing runs until you review the plan."))
+	s.WriteString("\n\n")
+
+	if !m.dryRun && !m.demo && os.Geteuid() != 0 {
+		s.WriteString(errorStyle.Render("ROOT CHECK"))
+		s.WriteString(" ")
+		s.WriteString(valueStyle.Render("Not running as root. Provisioning may fail."))
+		s.WriteString("\n")
+	}
+	if m.dryRun && !m.demo {
+		s.WriteString(warnStyle.Render("DRY RUN"))
+		s.WriteString(" ")
+		s.WriteString(valueStyle.Render("Commands will be logged without changing the system."))
+		s.WriteString("\n")
+	}
+	if (!m.dryRun && !m.demo && os.Geteuid() != 0) || (m.dryRun && !m.demo) {
+		s.WriteString("\n")
+	}
+
+	s.WriteString(m.homeList.View())
+	s.WriteString("\n")
+	s.WriteString(helpStyle.Render(fmt.Sprintf("%d total selected action(s)", m.selectedPlanCount())))
 	return s.String()
 }
 
@@ -101,6 +132,18 @@ func (m model) inputUserView() string {
 		body += "\n\n" + errorBlock(m.inputErr)
 	}
 	return m.page("Target User", "Used for account creation and per-user Node.js tooling.", body, []key.Binding{keys.Continue, keys.Back})
+}
+
+func (m model) inputGroupNameView() string {
+	body := fieldLabelStyle.Render("GROUP")
+	body += "\n\n"
+	body += m.groupNameInput.View()
+	body += "\n\n"
+	body += dimStyle.Render("Must match ^[a-z_][a-z0-9_-]*$ and be 32 characters or fewer.")
+	if m.inputErr != "" {
+		body += "\n\n" + errorBlock(m.inputErr)
+	}
+	return m.page("Target Group", "Used for group creation, deletion, and membership changes.", body, []key.Binding{keys.Continue, keys.Back})
 }
 
 func (m model) inputServiceUserGroupsView() string {
@@ -276,6 +319,9 @@ func (m model) confirmBody() string {
 	if m.selections.NeedsUsername() {
 		fmt.Fprintf(&body, "  Username: %s\n", strings.TrimSpace(m.usernameInput.Value()))
 	}
+	if m.selections.NeedsGroupName() {
+		fmt.Fprintf(&body, "  Group: %s\n", strings.TrimSpace(m.groupNameInput.Value()))
+	}
 	if m.selections.UserServiceGroups && strings.TrimSpace(m.serviceGroupsInput.Value()) != "" {
 		fmt.Fprintf(&body, "  Service user groups: %s\n", strings.TrimSpace(m.serviceGroupsInput.Value()))
 	}
@@ -324,11 +370,20 @@ func (m model) confirmBody() string {
 	if m.selections.UserAllowSSH {
 		body.WriteString("  The user will be added to the setup-managed SSH AllowUsers list.\n")
 	}
+	if m.selections.UserDenySSH {
+		body.WriteString("  The user will be removed from the setup-managed SSH AllowUsers list.\n")
+	}
 	if m.selections.UserSudo {
 		body.WriteString("  Setup-managed passwordless sudo will be enabled for the user.\n")
 	}
+	if m.selections.UserSudoDisable {
+		body.WriteString("  Setup-managed passwordless sudo will be removed for the user.\n")
+	}
 	if m.selections.UserLinger {
 		body.WriteString("  systemd user lingering will be enabled.\n")
+	}
+	if m.selections.UserLingerDisable {
+		body.WriteString("  systemd user lingering will be disabled.\n")
 	}
 	if m.selections.UserDockerGroup {
 		body.WriteString("  The user will be added to the existing docker group.\n")
@@ -338,6 +393,34 @@ func (m model) confirmBody() string {
 		if m.selections.UserServiceGroups {
 			body.WriteString("  The service user will be added to the selected existing groups.\n")
 		}
+	}
+	if m.selections.UserDisable {
+		body.WriteString("  The user password will be locked and setup-managed access removed.\n")
+	}
+	if m.selections.UserDelete {
+		body.WriteString("  The user account will be deleted after access is disabled; the home directory is preserved.\n")
+	}
+	if m.selections.GroupAny() {
+		body.WriteString("\n")
+		body.WriteString(sectionStyle.Render("Groups"))
+		body.WriteString("\n")
+		body.WriteString(divider(48))
+		body.WriteString("\n")
+	}
+	if m.selections.GroupCreate {
+		body.WriteString("  The group will be created if needed.\n")
+	}
+	if m.selections.GroupDelete {
+		body.WriteString("  The group will be deleted only if it is not a primary group for existing users.\n")
+	}
+	if m.selections.GroupList {
+		body.WriteString("  System groups will be listed.\n")
+	}
+	if m.selections.GroupAddUser {
+		body.WriteString("  The target user will be added to the selected group.\n")
+	}
+	if m.selections.GroupRemoveUser {
+		body.WriteString("  The target user will be removed from the selected group.\n")
 	}
 	if m.selections.ServiceAny() {
 		body.WriteString("\n")
@@ -460,7 +543,7 @@ func (m model) doneView() string {
 		s.WriteString("\n")
 		s.WriteString(subtitleStyle.Render("Fix the issue, then retry the failed step or go back to the plan."))
 	} else {
-		s.WriteString(successStyle.Render("Fresh setup complete"))
+		s.WriteString(successStyle.Render("Setup actions complete"))
 		s.WriteString("\n")
 		s.WriteString(subtitleStyle.Render(fmt.Sprintf("%d step(s) completed successfully.", m.completedRunSteps())))
 	}
@@ -648,20 +731,50 @@ func (m model) planSummaryLines() []string {
 	if m.selections.UserAllowSSH {
 		lines = append(lines, "User Management: allow SSH login")
 	}
+	if m.selections.UserDenySSH {
+		lines = append(lines, "User Management: deny SSH login")
+	}
 	if m.selections.UserSudo {
 		lines = append(lines, "User Management: passwordless sudo")
+	}
+	if m.selections.UserSudoDisable {
+		lines = append(lines, "User Management: disable sudo")
 	}
 	if m.selections.UserLinger {
 		lines = append(lines, "User Management: enable linger")
 	}
+	if m.selections.UserLingerDisable {
+		lines = append(lines, "User Management: disable linger")
+	}
 	if m.selections.UserDockerGroup {
 		lines = append(lines, "User Management: docker group")
+	}
+	if m.selections.UserDisable {
+		lines = append(lines, "User Management: disable user")
+	}
+	if m.selections.UserDelete {
+		lines = append(lines, "User Management: delete user")
 	}
 	if m.selections.UserCreateService {
 		lines = append(lines, "User Management: create service user")
 		if m.selections.UserServiceGroups {
 			lines = append(lines, "User Management: service user groups")
 		}
+	}
+	if m.selections.GroupCreate {
+		lines = append(lines, "Group Management: create group")
+	}
+	if m.selections.GroupDelete {
+		lines = append(lines, "Group Management: delete group")
+	}
+	if m.selections.GroupList {
+		lines = append(lines, "Group Management: list groups")
+	}
+	if m.selections.GroupAddUser {
+		lines = append(lines, "Group Management: add user to group")
+	}
+	if m.selections.GroupRemoveUser {
+		lines = append(lines, "Group Management: remove user from group")
 	}
 	if m.selections.ServiceCreate {
 		lines = append(lines, "Managed Service: create")

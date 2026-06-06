@@ -18,33 +18,21 @@ Enter
 Show
 Type "./bin/setup-linux-amd64 --demo"
 Enter
-Wait+Screen /Fresh Ubuntu Instance Setup/
+Wait+Screen /Setup Admin Console/
 Sleep 800ms
-Down 42
-Space
-Sleep 300ms
-Down 7
-Space
-Sleep 300ms
-Down
-Space
+Enter
+Wait+Screen /Fresh Setup/
 Sleep 600ms
+Space
+Sleep 500ms
 Enter
 Wait+Screen /TIMEZONE/
 Sleep 500ms
 Enter
-Wait+Screen /Target User/
-Type "dev"
-Sleep 500ms
-Enter
-Wait+Screen /SSH PUBLIC KEY/
-Type "ssh-ed25519 AAAAAAAAAAAAAAAAAAAAAA== setup-demo"
-Sleep 700ms
-Enter
 Wait+Screen /Review Plan/
 Sleep 1100ms
 Enter
-Wait+Screen /Fresh setup complete/
+Wait+Screen /Setup actions complete/
 Sleep 1200ms
 Space
 Sleep 700ms
