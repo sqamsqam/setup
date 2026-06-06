@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-06
+
 ### Added
 - Top-level group administration commands for create, delete, list, add-user, and remove-user workflows.
 - TUI admin-console home menu with focused areas for fresh setup, users, groups, services, instance maintenance, tools, dev tools, and diagnostics.
