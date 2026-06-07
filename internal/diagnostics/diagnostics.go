@@ -29,8 +29,13 @@ func Run(runner setupexec.CmdRunner) Report {
 		outputCheck(runner, "Failed units", "systemctl", "--failed", "--no-pager", "--plain"),
 		outputCheck(runner, "Listening ports", "ss", "-tulpen"),
 		runCheck(runner, "SSH config", "sshd", "-t"),
-		outputCheck(runner, "UFW", "ufw", "status", "verbose"),
-		outputCheck(runner, "Docker service", "systemctl", "is-active", "docker"),
+	)
+	ufw := ufwCheck(runner)
+	dockerService := outputCheck(runner, "Docker service", "systemctl", "is-active", "docker")
+	checks = append(checks,
+		ufw,
+		dockerService,
+		dockerUFWCheck(ufw, dockerService),
 		outputCheck(runner, "Docker disk", "docker", "system", "df"),
 	)
 	return checks
@@ -61,6 +66,34 @@ func outputCheck(runner setupexec.CmdRunner, name, cmd string, args ...string) C
 		out = "(no output)"
 	}
 	return Check{Name: name, Status: "ok", Detail: out}
+}
+
+func ufwCheck(runner setupexec.CmdRunner) Check {
+	check := outputCheck(runner, "UFW", "ufw", "status", "verbose")
+	if check.Status == "warning" && strings.Contains(check.Detail, `executable "ufw" not found`) {
+		check.Detail = "ufw is not installed; firewall diagnostics unavailable until UFW is installed."
+	}
+	return check
+}
+
+func dockerUFWCheck(ufw, dockerService Check) Check {
+	if ufw.Status == "ok" && dockerService.Status == "ok" && ufwActive(ufw.Detail) && strings.TrimSpace(dockerService.Detail) == "active" {
+		return Check{
+			Name:   "Docker/UFW compatibility",
+			Status: "warning",
+			Detail: "Docker is active while UFW is active. Docker-published ports can bypass UFW; bind services carefully and use DOCKER-USER for container-port filtering.",
+		}
+	}
+	return Check{Name: "Docker/UFW compatibility", Status: "ok", Detail: "no active Docker/UFW conflict detected"}
+}
+
+func ufwActive(detail string) bool {
+	for _, line := range strings.Split(detail, "\n") {
+		if strings.EqualFold(strings.TrimSpace(line), "Status: active") {
+			return true
+		}
+	}
+	return false
 }
 
 func runCheck(runner setupexec.CmdRunner, name, cmd string, args ...string) Check {

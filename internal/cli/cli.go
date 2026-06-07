@@ -588,9 +588,13 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Usage: "Install and enable UFW with safe defaults",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "allow-ssh", Usage: "Allow the detected SSH port before enabling", Value: true},
+					&cli.StringSliceFlag{Name: "ssh-port", Usage: "Explicit SSH port to allow; may be repeated"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					return firewall.EnableBaseline(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Bool("allow-ssh"))
+					return firewall.EnableBaselineWithOptions(commandRunner(cmd, dryRun, demo, runnerFactory), firewall.EnableOptions{
+						AllowSSH: cmd.Bool("allow-ssh"),
+						SSHPorts: cmd.StringSlice("ssh-port"),
+					})
 				}),
 			},
 			{
@@ -612,6 +616,40 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				}),
 			},
 			{
+				Name:  "deny",
+				Usage: "Deny a TCP or UDP port",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "port", Usage: "Port or port range, e.g. 443 or 60000:61000", Required: true},
+					&cli.StringFlag{Name: "proto", Usage: "Protocol: tcp or udp", Value: "tcp"},
+					&cli.StringFlag{Name: "from", Usage: "Optional source IP or CIDR"},
+					&cli.StringFlag{Name: "comment", Usage: "Optional UFW rule comment"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.DenyRule(commandRunner(cmd, dryRun, demo, runnerFactory), firewall.Rule{
+						Port:    cmd.String("port"),
+						Proto:   cmd.String("proto"),
+						From:    cmd.String("from"),
+						Comment: cmd.String("comment"),
+					})
+				}),
+			},
+			{
+				Name:  "limit",
+				Usage: "Rate-limit a TCP or UDP port",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "port", Usage: "Port or port range, e.g. 22", Required: true},
+					&cli.StringFlag{Name: "proto", Usage: "Protocol: tcp or udp", Value: "tcp"},
+					&cli.StringFlag{Name: "comment", Usage: "Optional UFW rule comment"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.LimitRule(commandRunner(cmd, dryRun, demo, runnerFactory), firewall.Rule{
+						Port:    cmd.String("port"),
+						Proto:   cmd.String("proto"),
+						Comment: cmd.String("comment"),
+					})
+				}),
+			},
+			{
 				Name:  "delete",
 				Usage: "Delete a numbered UFW rule",
 				Flags: []cli.Flag{
@@ -623,6 +661,26 @@ func firewallCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 						return fmt.Errorf("network delete requires --yes")
 					}
 					return firewall.DeleteRule(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.Int("number"))
+				}),
+			},
+			{
+				Name:  "reload",
+				Usage: "Reload UFW rules",
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					return firewall.Reload(commandRunner(cmd, dryRun, demo, runnerFactory))
+				}),
+			},
+			{
+				Name:  "disable",
+				Usage: "Disable UFW",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm firewall disable"},
+				},
+				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("network disable requires --yes")
+					}
+					return firewall.Disable(commandRunner(cmd, dryRun, demo, runnerFactory))
 				}),
 			},
 			{
@@ -994,6 +1052,14 @@ func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Value:   "UTC",
 				Usage:   "Timezone (default: UTC)",
 			},
+			&cli.BoolFlag{
+				Name:  "firewall",
+				Usage: "Install and enable UFW baseline after SSH access is configured",
+			},
+			&cli.StringSliceFlag{
+				Name:  "ssh-port",
+				Usage: "Explicit SSH port to allow when --firewall is set; may be repeated",
+			},
 		},
 		Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
 			username := cmd.String("user")
@@ -1011,6 +1077,9 @@ func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 			if pubkey == "" {
 				return fmt.Errorf("either --key or --key-file is required")
 			}
+			if err := validateFreshFirewallOptions(cmd); err != nil {
+				return err
+			}
 			tz := cmd.String("timezone")
 			runner := commandRunner(cmd, dryRun, demo, runnerFactory)
 
@@ -1020,6 +1089,14 @@ func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 			}
 			if err := user.AddUser(runner, username, pubkey); err != nil {
 				return err
+			}
+			if cmd.Bool("firewall") {
+				if err := firewall.EnableBaselineWithOptions(runner, firewall.EnableOptions{
+					AllowSSH: true,
+					SSHPorts: cmd.StringSlice("ssh-port"),
+				}); err != nil {
+					return err
+				}
 			}
 			if err := tools.InstallAll(runner); err != nil {
 				return err
@@ -1031,6 +1108,19 @@ func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 			return nil
 		}),
 	}
+}
+
+func validateFreshFirewallOptions(cmd *cli.Command) error {
+	sshPorts := cmd.StringSlice("ssh-port")
+	if len(sshPorts) > 0 && !cmd.Bool("firewall") {
+		return fmt.Errorf("--ssh-port requires --firewall")
+	}
+	if len(sshPorts) > 0 {
+		if _, err := firewall.SSHPortsForEnable(nil, sshPorts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func versionCmd() *cli.Command {

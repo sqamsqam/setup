@@ -276,6 +276,80 @@ func TestRunDryRunFull(t *testing.T) {
 	}
 }
 
+func TestRunDryRunFullWithFirewall(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+
+	err := app.Run(context.Background(), []string{
+		"setup", "fresh",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+		"--firewall",
+		"--ssh-port", "2222",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
+	addUserIdx := strings.Index(output, "usermod -aG docker test")
+	firewallIdx := strings.Index(output, "ufw --force enable")
+	if addUserIdx == -1 || firewallIdx == -1 {
+		t.Fatalf("expected user creation and firewall enable in output: %s", output)
+	}
+	if firewallIdx < addUserIdx {
+		t.Fatalf("expected firewall after user setup: %s", output)
+	}
+	if !strings.Contains(output, "ufw allow 2222/tcp comment setup ssh") {
+		t.Fatalf("expected explicit SSH firewall rule: %s", output)
+	}
+}
+
+func TestRunFullRejectsSSHPortWithoutFirewallBeforeProvisioning(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{
+		"setup", "fresh",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+		"--ssh-port", "2222",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--ssh-port requires --firewall") {
+		t.Fatalf("expected --ssh-port relationship error, got %v", err)
+	}
+	if dryBuf.Len() != 0 {
+		t.Fatalf("expected no provisioning commands before validation failure: %s", dryBuf.String())
+	}
+}
+
+func TestRunFullRejectsInvalidFirewallSSHPortBeforeProvisioning(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{
+		"setup", "fresh",
+		"--user", "test",
+		"--key", "ssh-ed25519 /B9dB00GY0f13kc2Y0uRBWRC6xXQDQUknL0Jkj1HxEo=",
+		"--firewall",
+		"--ssh-port", "bad",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
+		t.Fatalf("expected invalid port error, got %v", err)
+	}
+	if dryBuf.Len() != 0 {
+		t.Fatalf("expected no provisioning commands before validation failure: %s", dryBuf.String())
+	}
+}
+
 func TestRunFirewallAllow(t *testing.T) {
 	var dryBuf bytes.Buffer
 	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
@@ -295,6 +369,61 @@ func TestRunFirewallAllow(t *testing.T) {
 
 	if !strings.Contains(dryBuf.String(), "ufw allow from 10.0.0.0/24 to any port 443 proto tcp comment web") {
 		t.Fatalf("unexpected output: %s", dryBuf.String())
+	}
+}
+
+func TestRunFirewallEnableWithExplicitSSHPort(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{
+		"setup", "network", "enable",
+		"--ssh-port", "2222",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := dryBuf.String()
+	if !strings.Contains(output, "ufw allow 2222/tcp comment setup ssh") {
+		t.Fatalf("expected explicit SSH allow: %s", output)
+	}
+}
+
+func TestRunFirewallDenyAndLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "deny",
+			args: []string{"setup", "network", "deny", "--port", "25", "--proto", "tcp", "--from", "10.0.0.0/24", "--comment", "mail"},
+			want: "ufw deny from 10.0.0.0/24 to any port 25 proto tcp comment mail",
+		},
+		{
+			name: "limit",
+			args: []string{"setup", "network", "limit", "--port", "22", "--proto", "tcp", "--comment", "ssh"},
+			want: "ufw limit 22/tcp comment ssh",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var dryBuf bytes.Buffer
+			dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+			setupexec.SetPrintWriter(io.Discard)
+
+			app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+			if err := app.Run(context.Background(), tt.args); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(dryBuf.String(), tt.want) {
+				t.Fatalf("expected %q in %s", tt.want, dryBuf.String())
+			}
+		})
 	}
 }
 
@@ -340,6 +469,36 @@ func TestRunFirewallResetRequiresYes(t *testing.T) {
 	}
 	if strings.Contains(dryBuf.String(), "ufw") {
 		t.Fatalf("unexpected ufw command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunFirewallDisableRequiresYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "network", "disable"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "ufw") {
+		t.Fatalf("unexpected ufw command without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunFirewallDisableWithYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "network", "disable", "--yes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "ufw disable") {
+		t.Fatalf("expected disable command: %s", dryBuf.String())
 	}
 }
 

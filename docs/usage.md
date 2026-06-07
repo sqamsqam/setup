@@ -27,6 +27,7 @@ Fresh instance setup:
 
 ```bash
 sudo setup fresh --user dev --key-file ~/.ssh/id_ed25519.pub --timezone UTC
+sudo setup fresh --user dev --key-file ~/.ssh/id_ed25519.pub --timezone UTC --firewall --ssh-port 2222
 ```
 
 Focused commands:
@@ -85,8 +86,13 @@ Instance helpers:
 sudo setup network status
 sudo setup network list
 sudo setup network enable --allow-ssh
+sudo setup network enable --allow-ssh --ssh-port 2222
 sudo setup network allow --port 443 --proto tcp
+sudo setup network deny --port 25 --proto tcp
+sudo setup network limit --port 22 --proto tcp
 sudo setup network delete --number 2 --yes
+sudo setup network reload
+sudo setup network disable --yes
 sudo setup network reset --yes
 
 sudo setup guard install
@@ -143,7 +149,9 @@ Visual demos must use `--demo` so they stay deterministic and safe.
 - `setup user ssh allow` and `setup user ssh deny` manage only the setup-owned `AllowUsers` list instead of scanning all UID >= 1000 users.
 - Passwordless sudo is managed only through setup-owned `/etc/sudoers.d/<user>` files. Disable refuses to remove unmanaged sudoers files.
 - Setup-owned admin files, including SSH hardening, unattended-upgrades, fail2ban, and managed user-service units, refuse to replace unmanaged existing files.
-- Destructive or service-stopping admin commands such as firewall rule deletion, firewall reset, Docker prune, service disable, and service remove require `--yes`.
+- `setup network enable --allow-ssh` refuses to guess port 22 if `sshd -T` fails; pass `--ssh-port` when using a custom or externally managed SSH configuration.
+- Destructive or service-stopping admin commands such as firewall rule deletion, firewall disable, firewall reset, Docker prune, service disable, and service remove require `--yes`.
+- Docker-published ports can bypass UFW. Bind container services carefully, and use Docker's `DOCKER-USER` chain for container-port filtering that must apply before Docker forwarding.
 - User group-membership commands require the group to already exist; they do not create groups implicitly.
 - Top-level group deletion requires `--yes` and refuses to delete a group that is a primary group for an existing user.
 - Service users are setup-owned no-login system accounts with homes under `/var/lib/<user>`. They are not modifications to distro-owned accounts such as `root`, `www-data`, `sshd`, or `nobody`.

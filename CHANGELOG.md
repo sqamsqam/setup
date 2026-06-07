@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-07
+
+### Added
+- `setup fresh --firewall` can enable the UFW baseline after SSH user access is configured, with `--ssh-port` for explicit SSH-port allow rules.
+- `setup network deny`, `setup network limit`, `setup network reload`, and `setup network disable` cover common UFW operations without shelling out.
+
+### Changed
+- `setup network enable --allow-ssh` now fails if SSH port detection fails unless `--ssh-port` is provided.
+- Diagnostics now call out missing UFW clearly and warn when Docker and UFW are both active.
+
 ## [0.10.0] - 2026-06-07
 
 ### Changed
@@ -270,6 +280,7 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.11.0]: https://github.com/sqamsqam/setup/releases/tag/v0.11.0
 [0.10.0]: https://github.com/sqamsqam/setup/releases/tag/v0.10.0
 [0.9.0]: https://github.com/sqamsqam/setup/releases/tag/v0.9.0
 [0.8.4]: https://github.com/sqamsqam/setup/releases/tag/v0.8.4

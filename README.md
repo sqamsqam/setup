@@ -25,6 +25,7 @@ Run the same installer again later to update `setup` to the latest release.
 ```bash
 sudo setup              # open the guided TUI
 sudo setup fresh --user dev --key-file ~/.ssh/id_ed25519.pub --timezone UTC
+sudo setup fresh --user dev --key-file ~/.ssh/id_ed25519.pub --timezone UTC --firewall
 sudo setup base --timezone UTC
 sudo setup user --user dev --key-file ~/.ssh/id_ed25519.pub
 sudo setup user create --user dev --key-file ~/.ssh/id_ed25519.pub --allow-ssh --sudo --linger --group docker
@@ -42,6 +43,7 @@ Instance helpers:
 
 ```bash
 sudo setup network enable --allow-ssh
+sudo setup network enable --allow-ssh --ssh-port 2222
 sudo setup network allow --port 443 --proto tcp
 sudo setup guard install
 sudo setup containers log-rotation --yes
@@ -75,3 +77,5 @@ make bake    # taste, plate, then local GoReleaser snapshot
 ## Safety
 
 `setup` is built for fresh Ubuntu LXC containers. It keeps provisioning explicit, validates SSH config before restart, avoids interactive prompts in CLI mode, and aims for idempotent re-runs where practical.
+
+Docker can publish container ports in ways that bypass UFW rules. Bind services carefully, and use Docker's `DOCKER-USER` chain when container-port filtering must apply before Docker forwarding.
