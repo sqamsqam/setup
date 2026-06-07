@@ -79,3 +79,7 @@ make bake    # taste, plate, then local GoReleaser snapshot
 `setup` is built for fresh Ubuntu LXC containers. It keeps provisioning explicit, validates SSH config before restart, avoids interactive prompts in CLI mode, and aims for idempotent re-runs where practical.
 
 Docker can publish container ports in ways that bypass UFW rules. Bind services carefully, and use Docker's `DOCKER-USER` chain when container-port filtering must apply before Docker forwarding.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).

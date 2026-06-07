@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-07
+
+### Added
+- Apache License 2.0 project licensing and README license reference.
+
 ## [0.11.0] - 2026-06-07
 
 ### Added
