@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
 
@@ -699,8 +700,12 @@ func dockerCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "max-size", Value: "10m", Usage: "Maximum log file size"},
 					&cli.StringFlag{Name: "max-file", Value: "3", Usage: "Maximum rotated log files"},
+					&cli.BoolFlag{Name: "yes", Usage: "Confirm Docker restart if daemon config changes"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
+					if !cmd.Bool("yes") {
+						return fmt.Errorf("containers log-rotation requires --yes")
+					}
 					return dockermaint.ConfigureLogRotation(commandRunner(cmd, dryRun, demo, runnerFactory), dockermaint.LogRotationOptions{
 						MaxSize: cmd.String("max-size"),
 						MaxFile: cmd.String("max-file"),
@@ -863,9 +868,23 @@ func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 				Usage: "List setup-managed user services",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "user", Usage: "Target user", Required: true},
+					&cli.BoolFlag{Name: "state", Usage: "Include load, active, sub, and enabled state"},
 				},
 				Action: provisioningAction(func(ctx context.Context, cmd *cli.Command) error {
-					units, err := service.List(commandRunner(cmd, dryRun, demo, runnerFactory), cmd.String("user"))
+					runner := commandRunner(cmd, dryRun, demo, runnerFactory)
+					if cmd.Bool("state") {
+						states, err := service.ListWithState(runner, cmd.String("user"))
+						if err != nil {
+							return err
+						}
+						if len(states) == 0 {
+							fmt.Println("No setup-managed services found.")
+							return nil
+						}
+						fmt.Print(formatServiceStates(states))
+						return nil
+					}
+					units, err := service.List(runner, cmd.String("user"))
 					if err != nil {
 						return err
 					}
@@ -936,6 +955,17 @@ func serviceCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {
 			},
 		},
 	}
+}
+
+func formatServiceStates(states []service.UnitState) string {
+	var b strings.Builder
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "UNIT\tLOAD\tACTIVE\tSUB\tENABLED")
+	for _, state := range states {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", state.Unit, state.LoadState, state.ActiveState, state.SubState, state.UnitFileState)
+	}
+	_ = tw.Flush()
+	return b.String()
 }
 
 func fullCmd(dryRun, demo bool, runnerFactory RunnerFactory) *cli.Command {

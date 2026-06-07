@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-07
+
+### Changed
+- Managed service creation now validates generated systemd units, uses an explicit user runtime directory, and restarts existing services when their unit file changes.
+- Managed service listing now supports `--state` to show load, active, sub, and enabled state for setup-managed units.
+- `setup containers log-rotation` now requires `--yes` because it can restart Docker when daemon configuration changes.
+
+### Security
+- Docker log rotation now validates the candidate daemon configuration with `dockerd --validate` before writing and restarting Docker.
+
 ## [0.9.0] - 2026-06-06
 
 ### Added
@@ -260,6 +270,8 @@ Initial release of the Ubuntu LXC provisioning tool.
 - `CombinedOutput` from CmdRunner interface (unused)
 - Unused `centerText` function
 
+[0.10.0]: https://github.com/sqamsqam/setup/releases/tag/v0.10.0
+[0.9.0]: https://github.com/sqamsqam/setup/releases/tag/v0.9.0
 [0.8.4]: https://github.com/sqamsqam/setup/releases/tag/v0.8.4
 [0.8.3]: https://github.com/sqamsqam/setup/releases/tag/v0.8.3
 [0.8.2]: https://github.com/sqamsqam/setup/releases/tag/v0.8.2

@@ -140,6 +140,25 @@ func TestConfigureLogRotationRestartsWhenChanged(t *testing.T) {
 	if !hasDockerRestart(runner.ops) {
 		t.Fatalf("expected Docker restart after changed config: %v", runner.ops)
 	}
+	validateAt := indexDockerOp(runner.ops, "run:dockerd --validate --config-file")
+	restartAt := indexDockerOp(runner.ops, "run:systemctl restart docker")
+	if validateAt == -1 || restartAt == -1 || validateAt > restartAt {
+		t.Fatalf("expected Docker validation before restart: %v", runner.ops)
+	}
+}
+
+func TestMergeLogRotationRejectsMultilineOptions(t *testing.T) {
+	runner := &fileRunner{
+		DryRunner: setupexec.NewDryRunner(),
+		files:     map[string][]byte{},
+	}
+	_, err := MergeLogRotationConfig(runner, DaemonConfigPath, LogRotationOptions{
+		MaxSize: "10m\ninvalid",
+		MaxFile: "3",
+	})
+	if err == nil {
+		t.Fatal("expected multiline max-size error")
+	}
 }
 
 func hasDockerRestart(ops []string) bool {
@@ -149,4 +168,13 @@ func hasDockerRestart(ops []string) bool {
 		}
 	}
 	return false
+}
+
+func indexDockerOp(ops []string, prefix string) int {
+	for i, op := range ops {
+		if strings.HasPrefix(op, prefix) {
+			return i
+		}
+	}
+	return -1
 }

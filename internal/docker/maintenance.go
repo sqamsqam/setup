@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	setupexec "github.com/sqamsqam/setup/internal/exec"
 	"github.com/sqamsqam/setup/internal/managed"
@@ -42,6 +44,9 @@ func WriteLogRotationConfig(runner setupexec.CmdRunner, path string, opts LogRot
 	if err != nil {
 		return false, err
 	}
+	if err := validateDaemonConfig(runner, path, data); err != nil {
+		return false, err
+	}
 	return managed.WriteFileIfChanged(runner, path, data, 0644)
 }
 
@@ -51,6 +56,12 @@ func MergeLogRotationConfig(runner setupexec.CmdRunner, path string, opts LogRot
 	}
 	if opts.MaxFile == "" {
 		opts.MaxFile = "3"
+	}
+	if err := validateLogRotationOption("max-size", opts.MaxSize); err != nil {
+		return nil, err
+	}
+	if err := validateLogRotationOption("max-file", opts.MaxFile); err != nil {
+		return nil, err
 	}
 
 	config := map[string]any{}
@@ -77,6 +88,39 @@ func MergeLogRotationConfig(runner setupexec.CmdRunner, path string, opts LogRot
 		return nil, err
 	}
 	return append(out, '\n'), nil
+}
+
+func validateLogRotationOption(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s must not be empty", name)
+	}
+	if strings.ContainsAny(value, "\r\n") {
+		return fmt.Errorf("%s must be a single line", name)
+	}
+	return nil
+}
+
+func validateDaemonConfig(runner setupexec.CmdRunner, path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := runner.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	tmpPath, err := runner.CreateTemp(dir, ".setup-docker-daemon-*.json")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = runner.Remove(tmpPath) }()
+	if err := runner.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	if err := runner.Chmod(tmpPath, 0644); err != nil {
+		return err
+	}
+	if err := runner.Run("dockerd", "--validate", "--config-file", tmpPath); err != nil {
+		return fmt.Errorf("validate Docker daemon config: %w", err)
+	}
+	return nil
 }
 
 func DiskUsage(runner setupexec.CmdRunner) (string, error) {

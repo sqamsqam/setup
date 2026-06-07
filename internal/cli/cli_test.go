@@ -343,15 +343,33 @@ func TestRunFirewallResetRequiresYes(t *testing.T) {
 	}
 }
 
-func TestRunDockerLogsConfig(t *testing.T) {
+func TestRunDockerLogsConfigRequiresYes(t *testing.T) {
 	var dryBuf bytes.Buffer
 	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
 	setupexec.SetPrintWriter(io.Discard)
 
 	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
 	err := app.Run(context.Background(), []string{"setup", "containers", "log-rotation"})
+	if err == nil {
+		t.Fatal("expected --yes error")
+	}
+	if strings.Contains(dryBuf.String(), "systemctl restart docker") {
+		t.Fatalf("unexpected docker restart without --yes: %s", dryBuf.String())
+	}
+}
+
+func TestRunDockerLogsConfigWithYes(t *testing.T) {
+	var dryBuf bytes.Buffer
+	dryRunner := &setupexec.DryRunner{Stdout: &dryBuf}
+	setupexec.SetPrintWriter(io.Discard)
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return dryRunner })
+	err := app.Run(context.Background(), []string{"setup", "containers", "log-rotation", "--yes"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(dryBuf.String(), "dockerd --validate --config-file") {
+		t.Fatalf("expected docker daemon validation in output: %s", dryBuf.String())
 	}
 	if !strings.Contains(dryBuf.String(), "systemctl restart docker") {
 		t.Fatalf("expected docker restart in output: %s", dryBuf.String())
@@ -432,12 +450,12 @@ func TestRunServiceCommands(t *testing.T) {
 		{
 			name: "status",
 			args: []string{"setup", "service", "status", "--user", "dev", "--name", "app"},
-			want: "sudo -iu dev -- systemctl --user status setup-app.service --no-pager",
+			want: "sudo -iu dev -- env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user status setup-app.service --no-pager",
 		},
 		{
 			name: "logs",
 			args: []string{"setup", "service", "logs", "--user", "dev", "--name", "app"},
-			want: "sudo -iu dev -- journalctl --user -u setup-app.service --no-pager -n 100",
+			want: "sudo -iu dev -- env XDG_RUNTIME_DIR=/run/user/1000 journalctl --user -u setup-app.service --no-pager -n 100",
 		},
 		{
 			name: "restart",
@@ -504,6 +522,56 @@ func TestRunServiceListPrintsManagedUnits(t *testing.T) {
 	}
 	if got := strings.TrimSpace(buf.String()); got != "setup-app.service\nsetup-zed.service" {
 		t.Fatalf("unexpected list output %q", got)
+	}
+}
+
+func TestRunServiceListWithStatePrintsTable(t *testing.T) {
+	runner := newCLIServiceListRunner()
+	dir := "/home/dev/.config/systemd/user"
+	runner.dirs[dir] = []os.DirEntry{
+		cliDirEntry{name: "setup-app.service"},
+		cliDirEntry{name: "setup-worker.service"},
+	}
+	runner.files[filepath.Join(dir, "setup-app.service")] = []byte(managed.Marker + "[Service]\n")
+	runner.files[filepath.Join(dir, "setup-worker.service")] = []byte(managed.Marker + "[Service]\n")
+	runner.outs[cliShowUnitOp("dev", "setup-app.service")] = "LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled"
+	runner.outs[cliShowUnitOp("dev", "setup-worker.service")] = "LoadState=loaded\nActiveState=failed\nSubState=failed\nUnitFileState=disabled"
+
+	app := BuildApp(false, func(bool) setupexec.CmdRunner { return runner })
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	err := app.Run(context.Background(), []string{"setup", "service", "list", "--user", "dev", "--state"})
+	_ = w.Close()
+	os.Stdout = old
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := buf.String()
+	for _, want := range []string{
+		"UNIT",
+		"LOAD",
+		"ACTIVE",
+		"SUB",
+		"ENABLED",
+		"setup-app.service",
+		"active",
+		"running",
+		"setup-worker.service",
+		"failed",
+		"disabled",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in state list output:\n%s", want, output)
+		}
 	}
 }
 
@@ -783,6 +851,7 @@ type cliServiceListRunner struct {
 	*setupexec.DryRunner
 	dirs  map[string][]os.DirEntry
 	files map[string][]byte
+	outs  map[string]string
 }
 
 func newCLIServiceListRunner() *cliServiceListRunner {
@@ -790,12 +859,17 @@ func newCLIServiceListRunner() *cliServiceListRunner {
 		DryRunner: setupexec.NewDryRunner(),
 		dirs:      make(map[string][]os.DirEntry),
 		files:     make(map[string][]byte),
+		outs:      make(map[string]string),
 	}
 }
 
 func (r *cliServiceListRunner) Output(name string, args ...string) (string, error) {
+	key := "output:" + name + " " + strings.Join(args, " ")
 	if name == "getent" && len(args) >= 2 && args[0] == "passwd" {
 		return args[1] + ":x:1000:1000:User:/home/" + args[1] + ":/bin/bash", nil
+	}
+	if out, ok := r.outs[key]; ok {
+		return out, nil
 	}
 	return r.DryRunner.Output(name, args...)
 }
@@ -825,3 +899,7 @@ func (e cliDirEntry) Name() string               { return e.name }
 func (e cliDirEntry) IsDir() bool                { return e.dir }
 func (e cliDirEntry) Type() os.FileMode          { return 0 }
 func (e cliDirEntry) Info() (os.FileInfo, error) { return nil, nil }
+
+func cliShowUnitOp(user, unit string) string {
+	return "output:sudo -iu " + user + " -- env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show " + unit + " --property=LoadState --property=ActiveState --property=SubState --property=UnitFileState --no-pager"
+}

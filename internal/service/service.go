@@ -24,6 +24,14 @@ type Config struct {
 	EnvFile string
 }
 
+type UnitState struct {
+	Unit          string
+	LoadState     string
+	ActiveState   string
+	SubState      string
+	UnitFileState string
+}
+
 type account struct {
 	uid  int
 	gid  int
@@ -44,6 +52,11 @@ func Create(runner setupexec.CmdRunner, cfg Config) error {
 	if err := runner.Chown(dir, acct.uid, acct.gid); err != nil {
 		return err
 	}
+	oldContent, readErr := runner.ReadFile(path)
+	hadOld := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
 	changed, err := managed.WriteManagedFileIfChanged(runner, path, []byte(UnitContent(cfg)), 0644)
 	if err != nil {
 		return err
@@ -52,61 +65,111 @@ func Create(runner setupexec.CmdRunner, cfg Config) error {
 		if err := runner.Chown(path, acct.uid, acct.gid); err != nil {
 			return err
 		}
+		if err := validateUnit(runner, path); err != nil {
+			if rollbackErr := rollbackUnit(runner, path, oldContent, hadOld, acct); rollbackErr != nil {
+				return fmt.Errorf("validate systemd unit failed and rollback failed: %w (rollback: %v)", err, rollbackErr)
+			}
+			return fmt.Errorf("validate systemd unit failed; candidate rolled back: %w", err)
+		}
 	}
 	if err := runner.Run("loginctl", "enable-linger", cfg.User); err != nil {
 		return err
 	}
-	if err := runner.RunAsUser(cfg.User, "systemctl", "--user", "daemon-reload"); err != nil {
+	if err := runner.Run("systemctl", "start", fmt.Sprintf("user@%d.service", acct.uid)); err != nil {
 		return err
 	}
-	return runner.RunAsUser(cfg.User, "systemctl", "--user", "enable", "--now", unit)
+	if err := runUserSystemctl(runner, acct, cfg.User, "--user", "daemon-reload"); err != nil {
+		if !changed {
+			return err
+		}
+		if rollbackErr := rollbackUnit(runner, path, oldContent, hadOld, acct); rollbackErr != nil {
+			return fmt.Errorf("%w (rollback failed: %v)", err, rollbackErr)
+		}
+		if reloadErr := runUserSystemctl(runner, acct, cfg.User, "--user", "daemon-reload"); reloadErr != nil {
+			return fmt.Errorf("%w (rollback reload failed: %v)", err, reloadErr)
+		}
+		return err
+	}
+	if err := runUserSystemctl(runner, acct, cfg.User, "--user", "enable", "--now", unit); err != nil {
+		return err
+	}
+	if changed && hadOld {
+		if err := runUserSystemctl(runner, acct, cfg.User, "--user", "restart", unit); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func Status(runner setupexec.CmdRunner, user, name string) (string, error) {
 	if err := validateUserAndName(user, name); err != nil {
 		return "", err
 	}
-	if _, err := requireManagedUnit(runner, user, name); err != nil {
+	acct, _, err := requireManagedUnit(runner, user, name)
+	if err != nil {
 		return "", err
 	}
-	return runner.Output("sudo", "-iu", user, "--", "systemctl", "--user", "status", UnitName(name), "--no-pager")
+	return outputUserSystemctl(runner, acct, user, "--user", "status", UnitName(name), "--no-pager")
 }
 
 func Logs(runner setupexec.CmdRunner, user, name string) (string, error) {
 	if err := validateUserAndName(user, name); err != nil {
 		return "", err
 	}
-	if _, err := requireManagedUnit(runner, user, name); err != nil {
+	acct, _, err := requireManagedUnit(runner, user, name)
+	if err != nil {
 		return "", err
 	}
-	return runner.Output("sudo", "-iu", user, "--", "journalctl", "--user", "-u", UnitName(name), "--no-pager", "-n", "100")
+	return outputUserJournalctl(runner, acct, user, "--user", "-u", UnitName(name), "--no-pager", "-n", "100")
 }
 
 func Restart(runner setupexec.CmdRunner, user, name string) error {
 	if err := validateUserAndName(user, name); err != nil {
 		return err
 	}
-	if _, err := requireManagedUnit(runner, user, name); err != nil {
+	acct, _, err := requireManagedUnit(runner, user, name)
+	if err != nil {
 		return err
 	}
-	return runner.RunAsUser(user, "systemctl", "--user", "restart", UnitName(name))
+	return runUserSystemctl(runner, acct, user, "--user", "restart", UnitName(name))
 }
 
 func List(runner setupexec.CmdRunner, user string) ([]string, error) {
-	if err := setupuser.ValidateUsername(user); err != nil {
+	_, units, err := listManagedUnits(runner, user)
+	return units, err
+}
+
+func ListWithState(runner setupexec.CmdRunner, user string) ([]UnitState, error) {
+	acct, units, err := listManagedUnits(runner, user)
+	if err != nil {
 		return nil, err
+	}
+	states := make([]UnitState, 0, len(units))
+	for _, unit := range units {
+		state, err := getUnitState(runner, acct, user, unit)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return states, nil
+}
+
+func listManagedUnits(runner setupexec.CmdRunner, user string) (account, []string, error) {
+	if err := setupuser.ValidateUsername(user); err != nil {
+		return account{}, nil, err
 	}
 	acct, err := lookupAccount(runner, user)
 	if err != nil {
-		return nil, err
+		return account{}, nil, err
 	}
 	dir := userUnitDir(acct)
 	entries, err := runner.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return acct, nil, nil
 		}
-		return nil, err
+		return account{}, nil, err
 	}
 
 	var units []string
@@ -117,41 +180,42 @@ func List(runner setupexec.CmdRunner, user string) ([]string, error) {
 		}
 		content, err := runner.ReadFile(filepath.Join(dir, name))
 		if err != nil {
-			return nil, err
+			return account{}, nil, err
 		}
 		if managed.IsMarked(content) {
 			units = append(units, name)
 		}
 	}
 	sort.Strings(units)
-	return units, nil
+	return acct, units, nil
 }
 
 func Disable(runner setupexec.CmdRunner, user, name string) error {
 	if err := validateUserAndName(user, name); err != nil {
 		return err
 	}
-	if _, err := requireManagedUnit(runner, user, name); err != nil {
+	acct, _, err := requireManagedUnit(runner, user, name)
+	if err != nil {
 		return err
 	}
-	return runner.RunAsUser(user, "systemctl", "--user", "disable", "--now", UnitName(name))
+	return runUserSystemctl(runner, acct, user, "--user", "disable", "--now", UnitName(name))
 }
 
 func Remove(runner setupexec.CmdRunner, user, name string) error {
 	if err := validateUserAndName(user, name); err != nil {
 		return err
 	}
-	path, err := requireManagedUnit(runner, user, name)
+	acct, path, err := requireManagedUnit(runner, user, name)
 	if err != nil {
 		return err
 	}
-	if err := runner.RunAsUser(user, "systemctl", "--user", "disable", "--now", UnitName(name)); err != nil {
+	if err := runUserSystemctl(runner, acct, user, "--user", "disable", "--now", UnitName(name)); err != nil {
 		return err
 	}
 	if err := runner.Remove(path); err != nil {
 		return err
 	}
-	return runner.RunAsUser(user, "systemctl", "--user", "daemon-reload")
+	return runUserSystemctl(runner, acct, user, "--user", "daemon-reload")
 }
 
 func UnitName(name string) string {
@@ -223,26 +287,26 @@ func ValidateName(name string) error {
 	return nil
 }
 
-func requireManagedUnit(runner setupexec.CmdRunner, username, name string) (string, error) {
+func requireManagedUnit(runner setupexec.CmdRunner, username, name string) (account, string, error) {
 	acct, err := lookupAccount(runner, username)
 	if err != nil {
-		return "", err
+		return account{}, "", err
 	}
 	path := filepath.Join(userUnitDir(acct), UnitName(name))
 	content, err := runner.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("managed service unit %s does not exist", path)
+			return account{}, "", fmt.Errorf("managed service unit %s does not exist", path)
 		}
-		return "", err
+		return account{}, "", err
 	}
 	if setupexec.IsDryRun(runner) && len(content) == 0 {
-		return path, nil
+		return acct, path, nil
 	}
 	if !managed.IsMarked(content) {
-		return "", fmt.Errorf("refusing to operate on unmanaged service unit %s", path)
+		return account{}, "", fmt.Errorf("refusing to operate on unmanaged service unit %s", path)
 	}
-	return path, nil
+	return acct, path, nil
 }
 
 func userUnitDir(acct account) string {
@@ -277,6 +341,83 @@ func lookupAccount(runner setupexec.CmdRunner, username string) (account, error)
 }
 
 func systemdQuote(s string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`")
+	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`", "%", "%%")
 	return `"` + replacer.Replace(s) + `"`
+}
+
+func validateUnit(runner setupexec.CmdRunner, path string) error {
+	return runner.Run("systemd-analyze", "verify", path)
+}
+
+func rollbackUnit(runner setupexec.CmdRunner, path string, oldContent []byte, hadOld bool, acct account) error {
+	if !hadOld {
+		return runner.Remove(path)
+	}
+	if _, err := managed.WriteManagedFileIfChanged(runner, path, oldContent, 0644); err != nil {
+		return err
+	}
+	return runner.Chown(path, acct.uid, acct.gid)
+}
+
+func runUserSystemctl(runner setupexec.CmdRunner, acct account, user string, args ...string) error {
+	allArgs := appendUserEnvArgs(user, acct.uid, "systemctl", args...)
+	return runner.Run("sudo", allArgs...)
+}
+
+func outputUserSystemctl(runner setupexec.CmdRunner, acct account, user string, args ...string) (string, error) {
+	allArgs := appendUserEnvArgs(user, acct.uid, "systemctl", args...)
+	return runner.Output("sudo", allArgs...)
+}
+
+func outputUserJournalctl(runner setupexec.CmdRunner, acct account, user string, args ...string) (string, error) {
+	allArgs := appendUserEnvArgs(user, acct.uid, "journalctl", args...)
+	return runner.Output("sudo", allArgs...)
+}
+
+func appendUserEnvArgs(user string, uid int, name string, args ...string) []string {
+	allArgs := []string{"-iu", user, "--", "env", "XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(uid), name}
+	return append(allArgs, args...)
+}
+
+func getUnitState(runner setupexec.CmdRunner, acct account, user, unit string) (UnitState, error) {
+	out, err := outputUserSystemctl(runner, acct, user,
+		"--user",
+		"show",
+		unit,
+		"--property=LoadState",
+		"--property=ActiveState",
+		"--property=SubState",
+		"--property=UnitFileState",
+		"--no-pager",
+	)
+	if err != nil {
+		return UnitState{}, err
+	}
+	state := UnitState{
+		Unit:          unit,
+		LoadState:     "unknown",
+		ActiveState:   "unknown",
+		SubState:      "unknown",
+		UnitFileState: "unknown",
+	}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(value) == "" {
+			value = "unknown"
+		}
+		switch key {
+		case "LoadState":
+			state.LoadState = value
+		case "ActiveState":
+			state.ActiveState = value
+		case "SubState":
+			state.SubState = value
+		case "UnitFileState":
+			state.UnitFileState = value
+		}
+	}
+	return state, nil
 }

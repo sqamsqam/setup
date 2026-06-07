@@ -93,7 +93,7 @@ sudo setup guard install
 sudo setup guard status
 sudo setup guard unban --ip 203.0.113.10
 
-sudo setup containers log-rotation
+sudo setup containers log-rotation --yes
 sudo setup containers disk
 sudo setup containers prune --containers --images --build-cache --yes
 
@@ -106,6 +106,7 @@ sudo setup updates reboot --yes
 
 sudo setup service create --user dev --name app --workdir /home/dev/app --cmd "npm start"
 sudo setup service list --user dev
+sudo setup service list --user dev --state
 sudo setup service status --user dev --name app
 sudo setup service logs --user dev --name app
 sudo setup service restart --user dev --name app

@@ -44,10 +44,11 @@ Instance helpers:
 sudo setup network enable --allow-ssh
 sudo setup network allow --port 443 --proto tcp
 sudo setup guard install
-sudo setup containers log-rotation
+sudo setup containers log-rotation --yes
 sudo setup updates check
 sudo setup service create --user dev --name app --workdir /home/dev/app --cmd "npm start"
 sudo setup service list --user dev
+sudo setup service list --user dev --state
 sudo setup service disable --user dev --name app --yes
 sudo setup service remove --user dev --name app --yes
 sudo setup group list
